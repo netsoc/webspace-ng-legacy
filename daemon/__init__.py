@@ -28,10 +28,9 @@ def add_args(parser):
 def run(args):
     logging.basicConfig(level=logging.DEBUG, format='[{asctime:s}] {levelname:s}: {message:s}', style='{')
 
-    manager = webspace.Manager(args.lxd_socket)
-
     global server
     server = ThreadedUnixRPCServer(args.bind_socket, allow_none=True)
+    manager = webspace.Manager(args.lxd_socket, server)
 
     # Shutdown handler
     signal.signal(signal.SIGINT, sig_handler)

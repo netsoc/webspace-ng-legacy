@@ -1,4 +1,5 @@
 from functools import wraps
+import os
 import argparse
 
 from .client import Client
@@ -6,7 +7,8 @@ from .client import Client
 def cmd(f):
     @wraps(f)
     def wrapper(args):
-        with Client(args.socket_path) as client:
+        user = args.user if 'user' in args else None
+        with Client(args.socket_path, user=user) as client:
             return f(client, args)
     return wrapper
 
@@ -19,6 +21,9 @@ def add_args(parser):
     parser.add_argument('-c', '--socket', dest='socket_path',
                         help="Path to the daemon's Unix socket",
                         default='/var/lib/webspace-ng/unix.socket')
+    if os.geteuid() == 0:
+        parser.add_argument('-u', '--user', help='User to perform operations as',
+                            default='root')
 
     subparsers = parser.add_subparsers()
     subparsers.required = True

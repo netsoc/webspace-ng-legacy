@@ -3,6 +3,7 @@ import stat
 import os
 import pwd
 import grp
+import threading
 import socket
 import socketserver
 from http.server import BaseHTTPRequestHandler
@@ -38,9 +39,17 @@ class UnixHTTPRequestHandler(UnixStreamRequestHandler, BaseHTTPRequestHandler):
         return 'unix+pid://{}?user={}&group={}'.format(
             self.client_pid, self.client_user, self.client_group)
 
+
+_hacky_local = threading.local()
 class UnixRPCRequestHandler(UnixHTTPRequestHandler, SimpleXMLRPCRequestHandler):
     # RPC2 only
     rpc_paths = ('/RPC2',)
+
+    # Hacky way of passing the request through to the RPC functions
+    # Shove the request into thread-local storage (yuck...)
+    def setup(self):
+        super(UnixRPCRequestHandler, self).setup()
+        _hacky_local.current_req = self
 
 class UnixRPCServer(UnixStreamServer, SimpleXMLRPCDispatcher):
     def __init__(self, addr, requestHandler=UnixRPCRequestHandler,
@@ -59,6 +68,10 @@ class UnixRPCServer(UnixStreamServer, SimpleXMLRPCDispatcher):
         UnixStreamServer.__init__(self, addr, requestHandler, bind_and_activate)
 
         os.chmod(addr, socket_mode)
+
+    @property
+    def current_request(self):
+        return _hacky_local.current_req
 
 class ThreadedUnixRPCServer(socketserver.ThreadingMixIn, UnixRPCServer):
     pass
