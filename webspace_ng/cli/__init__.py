@@ -29,5 +29,8 @@ def main():
                         help='Image alias / fingerprint to create your container from')
     p_init.set_defaults(func=init)
 
+    p_status = subparsers.add_parser('status', help='Show the status of your container')
+    p_status.set_defaults(func=status)
+
     args = parser.parse_args()
     args.func(args)

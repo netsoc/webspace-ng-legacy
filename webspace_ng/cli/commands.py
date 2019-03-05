@@ -50,3 +50,8 @@ def init(client, args):
 
     client.init(image['fingerprint'])
     print('Success!')
+
+@cmd
+def status(client, args):
+    info = client.status()
+    print('Container status: {}'.format(info))

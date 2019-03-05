@@ -28,7 +28,7 @@ def image_info(image):
     }
 
 class Manager:
-    allowed = set(['images', 'init'])
+    allowed = set(['images', 'init', 'status'])
 
     def __init__(self, socket_path, server):
         endpoint = 'http+unix://{}'.format(quote(socket_path, safe=''))
@@ -55,7 +55,16 @@ class Manager:
         if self.client.containers.exists(container_name):
             raise WebspaceError('Your container has already been initialized!')
 
-        container = self.client.containers.create(get_new_config(user, image_fingerprint), wait=True)
+        self.client.containers.create(get_new_config(user, image_fingerprint), wait=True)
+
+    @check_user
+    def status(self, user):
+        container_name = user_container(user)
+        if not self.client.containers.exists(container_name):
+            raise WebspaceError('Your container has not been initialized')
+
+        container = self.client.containers.get(container_name)
+        return container.status
 
     def _dispatch(self, method, params):
         if not method in Manager.allowed:
