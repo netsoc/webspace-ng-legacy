@@ -1,8 +1,11 @@
 from urllib.parse import quote
 from functools import wraps
 import logging
+import grp
 
 from pylxd import Client
+
+from .. import ADMIN_GROUP
 
 class Manager:
     allowed = set(['test'])
@@ -11,12 +14,13 @@ class Manager:
         endpoint = 'http+unix://{}'.format(quote(socket_path, safe=''))
         self.client = Client(endpoint=endpoint)
         self.server = server
+        self.admins = set(grp.getgrnam(ADMIN_GROUP).gr_mem)
 
     def check_user(f):
         @wraps(f)
         def wrapper(self, *args):
             req = self.server.current_request
-            if req.client_uid == 0:
+            if req.client_user in self.admins:
                 return f(self, *args)
             return f(self, req.client_user, *args)
         return wrapper

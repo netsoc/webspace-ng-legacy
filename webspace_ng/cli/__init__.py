@@ -1,7 +1,10 @@
 from functools import wraps
 import os
+import pwd
+import grp
 import argparse
 
+from .. import ADMIN_GROUP
 from .client import Client
 
 def cmd(f):
@@ -17,13 +20,15 @@ def test(client, args):
     for c in client.test():
         print(' - {}'.format(c))
 
-def add_args(parser):
+def main():
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('-c', '--socket', dest='socket_path',
                         help="Path to the daemon's Unix socket",
                         default='/var/lib/webspace-ng/unix.socket')
-    if os.geteuid() == 0:
+    current_user = pwd.getpwuid(os.geteuid()).pw_name
+    if current_user in grp.getgrnam(ADMIN_GROUP).gr_mem:
         parser.add_argument('-u', '--user', help='User to perform operations as',
-                            default='root')
+                            default=current_user)
 
     subparsers = parser.add_subparsers()
     subparsers.required = True
@@ -32,3 +37,6 @@ def add_args(parser):
     p_test = subparsers.add_parser('test', help='Test command',
                                   formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     p_test.set_defaults(func=cmd(test))
+
+    args = parser.parse_args()
+    args.func(args)

@@ -1,6 +1,7 @@
 import logging
 import signal
 import threading
+import argparse
 
 from unixrpc import ThreadedUnixRPCServer
 from . import webspace
@@ -17,15 +18,15 @@ def sig_handler(num, frame):
     if not is_shutdown:
         threading.Thread(target=shutdown).start()
 
-def add_args(parser):
-    parser.set_defaults(func=run)
+def main():
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('-b', '--bind', dest='bind_socket',
                           help='Path to the Unix socket to bind on',
                           default='/var/lib/webspace-ng/unix.socket')
     parser.add_argument('-c', '--lxd-socket', dest='lxd_socket',
                           help='Path to the LXD Unix socket', default='/var/lib/lxd/unix.socket')
+    args = parser.parse_args()
 
-def run(args):
     logging.basicConfig(level=logging.DEBUG, format='[{asctime:s}] {levelname:s}: {message:s}', style='{')
 
     global server

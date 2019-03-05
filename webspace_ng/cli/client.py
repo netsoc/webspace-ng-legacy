@@ -1,4 +1,4 @@
-from unixrpc import UnixServerProxy
+from ..unixrpc import UnixServerProxy
 
 # Copied from xmlrpc.client._Method
 class _UserMethod:
@@ -11,7 +11,7 @@ class _UserMethod:
     def __call__(self, *args):
         if self.__user is not None:
             # The server expects us to pass the desired user as an argument
-            # if root
+            # if a member of the `webspace-admin` group
             args = (self.__user,) + args
             return self.__send(self.__name, args)
 
