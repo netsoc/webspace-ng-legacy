@@ -3,7 +3,7 @@ import signal
 import threading
 import argparse
 
-from unixrpc import ThreadedUnixRPCServer
+from ..unixrpc import ThreadedUnixRPCServer
 from . import webspace
 
 is_shutdown = False

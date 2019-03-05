@@ -5,10 +5,30 @@ import grp
 
 from pylxd import Client
 
-from .. import ADMIN_GROUP
+from .. import *
+
+def user_container(user):
+    return '{}-ws'.format(user)
+def get_new_config(user, image):
+    return {
+        'name': user_container(user),
+        'ephemeral': False,
+        'profiles': ['webspace'],
+        'source': {
+            'type': 'image',
+            'fingerprint': image
+        }
+    }
+def image_info(image):
+    return {
+        'fingerprint': image.fingerprint,
+        'aliases': image.aliases,
+        'properties': image.properties,
+        'size': image.size,
+    }
 
 class Manager:
-    allowed = set(['test'])
+    allowed = set(['images', 'init'])
 
     def __init__(self, socket_path, server):
         endpoint = 'http+unix://{}'.format(quote(socket_path, safe=''))
@@ -26,13 +46,16 @@ class Manager:
         return wrapper
 
     @check_user
-    def test(self, user):
-        logging.debug('user is %s', user)
-        names = []
-        for container in self.client.containers.all():
-            names.append(container.name)
+    def images(self, user):
+        return list(map(image_info, self.client.images.all()))
 
-        return names
+    @check_user
+    def init(self, user, image_fingerprint):
+        container_name = user_container(user)
+        if self.client.containers.exists(container_name):
+            raise WebspaceError('Your container has already been initialized!')
+
+        container = self.client.containers.create(get_new_config(user, image_fingerprint), wait=True)
 
     def _dispatch(self, method, params):
         if not method in Manager.allowed:

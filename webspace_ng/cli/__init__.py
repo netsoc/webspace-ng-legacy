@@ -1,24 +1,10 @@
-from functools import wraps
 import os
 import pwd
 import grp
 import argparse
 
 from .. import ADMIN_GROUP
-from .client import Client
-
-def cmd(f):
-    @wraps(f)
-    def wrapper(args):
-        user = args.user if 'user' in args else None
-        with Client(args.socket_path, user=user) as client:
-            return f(client, args)
-    return wrapper
-
-def test(client, args):
-    print('Running containers:')
-    for c in client.test():
-        print(' - {}'.format(c))
+from .commands import *
 
 def main():
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -34,9 +20,14 @@ def main():
     subparsers.required = True
     subparsers.dest = 'command'
 
-    p_test = subparsers.add_parser('test', help='Test command',
-                                  formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    p_test.set_defaults(func=cmd(test))
+    p_images = subparsers.add_parser('images', help='List available images')
+    p_images.set_defaults(func=images)
+
+    p_init = subparsers.add_parser('init', help='Create your container',
+                                   formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    p_init.add_argument('image',
+                        help='Image alias / fingerprint to create your container from')
+    p_init.set_defaults(func=init)
 
     args = parser.parse_args()
     args.func(args)
