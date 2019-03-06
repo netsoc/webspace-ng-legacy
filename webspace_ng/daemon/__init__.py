@@ -2,9 +2,11 @@ import logging
 import signal
 import threading
 import argparse
+import os
+from os import path
 
 from munch import Munch
-import yaml
+from ruamel.yaml import YAML
 
 from ..unixrpc import ThreadedUnixRPCServer
 from . import webspace
@@ -58,16 +60,23 @@ def load_config():
                           help='Path to the LXD Unix socket (default {})'.format(config['lxd']['socket']))
     args = parser.parse_args()
 
+    yaml = YAML()
+    if not path.isfile(args.config):
+        with open(args.config, 'w') as conf:
+            yaml.dump(config, conf)
+
     with open(args.config) as conf:
-        yaml_dict = yaml.safe_load(conf)
-        if yaml_dict is not None:
-            merge(yaml_dict, config)
+        yaml_dict = yaml.load(conf)
+        merge(yaml_dict, config)
 
     config = Munch.fromDict(config)
     if args.bind_socket is not None:
         config.bind_socket = args.bind_socket
     if args.lxd_socket is not None:
         config.lxd.socket = args.lxd_socket
+
+    sock_dir = path.normpath(path.join(config.bind_socket, '..'))
+    os.makedirs(sock_dir, exist_ok=True)
 
     level = logging.INFO
     if args.verbose and args.verbose >= 1:
