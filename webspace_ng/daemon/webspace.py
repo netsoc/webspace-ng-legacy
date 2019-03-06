@@ -19,18 +19,6 @@ from ws4py.messaging import TextMessage
 
 from .. import ADMIN_GROUP, WebspaceError
 
-def user_container(user):
-    return '{}-ws'.format(user)
-def get_new_config(user, image):
-    return {
-        'name': user_container(user),
-        'ephemeral': False,
-        'profiles': ['webspace'],
-        'source': {
-            'type': 'image',
-            'fingerprint': image
-        }
-    }
 def image_info(image):
     return {
         'fingerprint': image.fingerprint,
@@ -165,7 +153,7 @@ def check_init(f):
     @wraps(f)
     @check_user
     def wrapper(self, user, *args):
-        container_name = user_container(user)
+        container_name = self.user_container(user)
         if not self.client.containers.exists(container_name):
             raise WebspaceError('Your container has not been initialized')
         container = self.client.containers.get(container_name)
@@ -192,8 +180,10 @@ def check_console(f):
 class Manager:
     allowed = {'images', 'init', 'status', 'console', 'console_close', 'console_resize'}
 
-    def __init__(self, socket_path, server):
-        endpoint = 'http+unix://{}'.format(parse.quote(socket_path, safe=''))
+    def __init__(self, config, server):
+        self.config = config
+
+        endpoint = 'http+unix://{}'.format(parse.quote(config.lxd.socket, safe=''))
         self.client = Client(endpoint=endpoint)
         self.server = server
         self.admins = set(grp.getgrnam(ADMIN_GROUP).gr_mem)
@@ -203,17 +193,30 @@ class Manager:
         for session in self.console_sessions.values():
             session.stop(join=True)
 
+    def user_container(self, user):
+        return '{}{}'.format(user, self.config.lxd.suffix)
+    def get_new_config(self, user, image):
+        return {
+            'name': self.user_container(user),
+            'ephemeral': False,
+            'profiles': [self.config.lxd.profile],
+            'source': {
+                'type': 'image',
+                'fingerprint': image
+            }
+        }
+
     @check_user
     def images(self, _):
         return list(map(image_info, self.client.images.all()))
 
     @check_user
     def init(self, user, image_fingerprint):
-        container_name = user_container(user)
+        container_name = self.user_container(user)
         if self.client.containers.exists(container_name):
             raise WebspaceError('Your container has already been initialized!')
 
-        self.client.containers.create(get_new_config(user, image_fingerprint), wait=True)
+        self.client.containers.create(self.get_new_config(user, image_fingerprint), wait=True)
 
     @check_init
     def status(self, _, container):
