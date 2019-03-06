@@ -113,7 +113,25 @@ def init(client, args):
 @cmd
 def status(client, _args):
     info = client.status()
-    print('Container status: {}'.format(info))
+    print('Container status: {}'.format(info['status']))
+    if info['disk']:
+        print('Disks:')
+        for name, data in info['disk'].items():
+            print(' - {}: Used {}'.format(name, format_size(data['usage'], binary=True)))
+    print('Memory use: {}'.format(format_size(info['memory']['usage'], binary=True)))
+    print('Running processes: {}'.format(info['processes']))
+    if info['network'] and not (len(info['network']) == 1 and 'lo' in info['network']):
+        print('Network interfaces:')
+        for name, data in info['network'].items():
+            if name == 'lo':
+                continue
+            print(' - {} ({}):'.format(name, data['hwaddr']))
+            print('   Sent/received: {}/{}'.format(
+                                                   format_size(data['counters']['bytes_sent'], binary=True),
+                                                   format_size(data['counters']['bytes_received'], binary=True)))
+            for addr in data['addresses']:
+                print('   IPv{} address: {}/{}'.format('6' if addr['family'] == 'inet6' else '4',
+                                                    addr['address'], addr['netmask']))
 
 @cmd
 def log(client, _args):

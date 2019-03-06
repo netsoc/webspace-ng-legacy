@@ -221,7 +221,7 @@ class Manager:
 
     @check_init
     def status(self, _, container):
-        return container.status
+        return container.state()
 
     @check_running
     def log(self, _user, container):
