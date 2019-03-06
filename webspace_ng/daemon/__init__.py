@@ -102,4 +102,4 @@ def main():
     server.serve_forever()
     server.server_close()
 
-    manager.stop()
+    manager._stop()

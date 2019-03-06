@@ -178,7 +178,8 @@ def check_console(f):
     return wrapper
 
 class Manager:
-    allowed = {'images', 'init', 'status', 'console', 'console_close', 'console_resize'}
+    allowed = {'images', 'init', 'status', 'console', 'console_close',
+               'console_resize', 'shutdown', 'reboot', 'delete'}
 
     def __init__(self, config, server):
         self.config = config
@@ -189,7 +190,7 @@ class Manager:
         self.admins = set(grp.getgrnam(ADMIN_GROUP).gr_mem)
         self.console_sessions = {}
 
-    def stop(self):
+    def _stop(self):
         for session in self.console_sessions.values():
             session.stop(join=True)
 
@@ -258,6 +259,20 @@ class Manager:
     def console_close(self, user, _, session):
         session.stop(join=True)
         del self.console_sessions[user]
+
+    @check_running
+    def shutdown(self, _user, container):
+        container.stop(wait=True)
+
+    @check_running
+    def reboot(self, _user, container):
+        container.restart(wait=True)
+
+    @check_init
+    def delete(self, _user, container):
+        if container.status_code == 103:
+            container.stop(wait=True)
+        container.delete(wait=True)
 
     def _dispatch(self, method, params):
         if not method in Manager.allowed:

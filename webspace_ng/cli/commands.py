@@ -16,6 +16,52 @@ from .client import Client
 CONSOLE_ESCAPE = b'\x1d'
 CONSOLE_ESCAPE_QUIT = b'q'
 
+def ask(question, default="yes"):
+    """Ask a yes/no question via input() and return their answer.
+
+    "question" is a string that is presented to the user.
+    "default" is the presumed answer if the user just hits <Enter>.
+        It must be "yes" (the default), "no" or None (meaning
+        an answer is required of the user).
+
+    The "answer" return value is True for "yes" or False for "no".
+    """
+    valid = {"yes": True, "y": True, "ye": True,
+             "no": False, "n": False}
+    if default is None:
+        prompt = " [y/n] "
+    elif default == "yes":
+        prompt = " [Y/n] "
+    elif default == "no":
+        prompt = " [y/N] "
+    else:
+        raise ValueError("invalid default answer: '{}'".format(default))
+
+    while True:
+        print(question + prompt, end='')
+        choice = input().lower()
+        if default is not None and choice == '':
+            return valid[default]
+        elif choice in valid:
+            return valid[choice]
+        else:
+            print("Please respond with 'yes' or 'no' "
+                             "(or 'y' or 'n').")
+
+class process:
+    def __init__(self, message, done=' done.'):
+        self.message = message
+        self.done = done
+    def __enter__(self):
+        print(self.message, end='')
+        sys.stdout.flush()
+        return self
+    def __exit__(self, ex_type, e_value, trace):
+        if not e_value:
+            print(self.done)
+        else:
+            print()
+
 def find_image(client, id_):
     image_list = client.images()
     # First try to find it by an alias
@@ -36,7 +82,10 @@ def cmd(f):
     def wrapper(args):
         user = args.user if 'user' in args else None
         with Client(args.socket_path, user=user) as client:
-            return f(client, args)
+            try:
+                return f(client, args)
+            except Exception as ex:
+                print('Error: {}'.format(ex), file=sys.stderr)
     return wrapper
 
 @cmd
@@ -54,21 +103,20 @@ def images(client, _args):
 
 @cmd
 def init(client, args):
-    print('Creating your container...')
-    image = find_image(client, args.image)
-    if image is None:
-        raise WebspaceError('"{}" is not a valid image alias / fingerprint'.format(args.image))
+    with process('Creating your container...', done=' success!'):
+        image = find_image(client, args.image)
+        if image is None:
+            raise WebspaceError('"{}" is not a valid image alias / fingerprint'.format(args.image))
 
-    client.init(image['fingerprint'])
-    print('Success!')
+        client.init(image['fingerprint'])
 
 @cmd
-def status(client, _):
+def status(client, _args):
     info = client.status()
     print('Container status: {}'.format(info))
 
 @cmd
-def console(client, _):
+def console(client, _args):
     print('Attaching to console...')
     t_width, t_height = shutil.get_terminal_size()
     sock_path = client.console(t_width, t_height)
@@ -124,3 +172,21 @@ def console(client, _):
         # Restore the terminal to its original state
         termios.tcsetattr(stdin, termios.TCSADRAIN, old)
         sock.close()
+
+@cmd
+def shutdown(client, _args):
+    with process('Shutting your container down...'):
+        client.shutdown()
+
+@cmd
+def reboot(client, _args):
+    with process('Rebooting your container...'):
+        client.reboot()
+
+@cmd
+def delete(client, _args):
+    if not ask('Are you sure?', default='no'):
+        return
+
+    with process('Deleting your container...'):
+        client.delete()

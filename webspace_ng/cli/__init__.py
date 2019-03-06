@@ -35,5 +35,14 @@ def main():
     p_console = subparsers.add_parser('console', help="Attach to your container's console")
     p_console.set_defaults(func=console)
 
+    p_shutdown = subparsers.add_parser('shutdown', help='Shutdown your container')
+    p_shutdown.set_defaults(func=shutdown)
+
+    p_reboot = subparsers.add_parser('reboot', help='Reboot your container')
+    p_reboot.set_defaults(func=reboot)
+
+    p_delete = subparsers.add_parser('delete', help='Delete your container')
+    p_delete.set_defaults(func=delete)
+
     args = parser.parse_args()
     args.func(args)
