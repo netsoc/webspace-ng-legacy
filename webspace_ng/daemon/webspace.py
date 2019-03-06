@@ -1,5 +1,6 @@
 from urllib import parse
 from functools import wraps
+import json
 import logging
 import grp
 import stat
@@ -14,7 +15,7 @@ from eventfd import EventFD
 from pylxd import Client
 from pylxd.models import Operation
 from ws4py.client import WebSocketBaseClient
-from ws4py.manager import WebSocketManager
+from ws4py.messaging import TextMessage
 
 from .. import ADMIN_GROUP, WebspaceError
 
@@ -43,6 +44,16 @@ class ConsoleControl(WebSocketBaseClient):
         WebSocketBaseClient.__init__(self, ws_uri, *args, **kwargs)
         self.resource = resource
 
+    def resize(self, width, height):
+        payload = json.dumps({
+            'command': 'window-resize',
+            'args': {
+                'width': width,
+                'height': height
+            }
+        }).encode('utf-8')
+
+        self.send(payload, binary=False)
     def received_message(self, message):
         print('control msg', message.data)
 class ConsoleSession(WebSocketBaseClient):
@@ -62,8 +73,8 @@ class ConsoleSession(WebSocketBaseClient):
         shutil.chown(self.socket_path, user=user)
         os.chmod(self.socket_path, stat.S_IRWXU)
 
-        self.console = ConsoleControl(ws_uri, control_path)
-        self.console.connect()
+        self.control = ConsoleControl(ws_uri, control_path)
+        self.control.connect()
 
         WebSocketBaseClient.__init__(self, ws_uri, *args, **kwargs)
         self.resource = console_path
@@ -82,16 +93,16 @@ class ConsoleSession(WebSocketBaseClient):
                 break
     def __read_loop(self):
         while True:
-            r, _, _ = select.select([self.__shutdown_event, self.sock, self.console.sock, self.socket_conn], [], [])
+            r, _, _ = select.select([self.__shutdown_event, self.sock, self.control.sock, self.socket_conn], [], [])
             if self.__shutdown_event in r:
                 break
             if self.sock in r:
                 if not self.once():
                     logging.debug('websocket error')
                     break
-            if self.console.sock in r:
-                if not self.console.once():
-                    logging.debug('console websocket error')
+            if self.control.sock in r:
+                if not self.control.once():
+                    logging.debug('control websocket error')
                     break
             if self.socket_conn in r:
                 try:
@@ -116,11 +127,11 @@ class ConsoleSession(WebSocketBaseClient):
 
         logging.debug('closing websockets')
         try:
-            self.console.close()
+            self.control.close()
             self.close()
         except:
             pass
-        self.console.terminate()
+        self.control.terminate()
         self.terminate()
 
     def start(self):
@@ -133,6 +144,12 @@ class ConsoleSession(WebSocketBaseClient):
             self.join()
 
     def received_message(self, message):
+        # Apparently a text message is a "message barrier"
+        if isinstance(message, TextMessage):
+            logging.debug('received websocket message barrier')
+            self.stop()
+            return
+
         if self.socket_conn is not None:
             self.socket_conn.sendall(message.data)
 
@@ -162,9 +179,18 @@ def check_running(f):
             raise WebspaceError('Your container is not running')
         return f(self, user, container, *args)
     return wrapper
+def check_console(f):
+    @wraps(f)
+    @check_running
+    def wrapper(self, user, container, *args):
+        if not user in self.console_sessions:
+            raise WebspaceError("Your container doesn't have an active console session")
+        session = self.console_sessions[user]
+        return f(self, user, container, session, *args)
+    return wrapper
 
 class Manager:
-    allowed = set(['images', 'init', 'status', 'console'])
+    allowed = {'images', 'init', 'status', 'console', 'console_close', 'console_resize'}
 
     def __init__(self, socket_path, server):
         endpoint = 'http+unix://{}'.format(parse.quote(socket_path, safe=''))
@@ -221,12 +247,12 @@ class Manager:
 
         return session.socket_path
 
-    @check_running
-    def close_console(self, user, _):
-        if not user in self.console_sessions:
-            raise WebspaceError("Your container doesn't have an active console session")
+    @check_console
+    def console_resize(self, _user, _container, session, t_width, t_height):
+        session.control.resize(t_width, t_height)
 
-        session = self.console_sessions[user]
+    @check_console
+    def console_close(self, user, _, session):
         session.stop(join=True)
         del self.console_sessions[user]
 

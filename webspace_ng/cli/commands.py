@@ -1,5 +1,6 @@
 from functools import wraps
 import sys
+import signal
 import termios
 import tty
 import socket
@@ -7,6 +8,7 @@ import select
 import shutil
 
 from humanfriendly import format_size
+from eventfd import EventFD
 
 from .. import WebspaceError
 from .client import Client
@@ -70,18 +72,33 @@ def console(client, _):
     print('Attaching to console...')
     t_width, t_height = shutil.get_terminal_size()
     sock_path = client.console(t_width, t_height)
+    def notify_resize(_signum, _frame):
+        t_width, t_height = shutil.get_terminal_size()
+        client.console_resize(t_width, t_height)
+    # SIGWINCH is sent when the terminal is resized
+    signal.signal(signal.SIGWINCH, notify_resize)
+
+    # Establish the terminal pipe connection
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     sock.connect(sock_path)
 
     stdin = sys.stdin.fileno()
     old = termios.tcgetattr(stdin)
     tty.setraw(stdin)
-    print('Hit ^] (Ctrl+]) and then q to disconnect', end='\r\n')
+
+    should_quit = EventFD()
+    def trigger_quit(_signum, _frame):
+        should_quit.set()
+    signal.signal(signal.SIGINT, trigger_quit)
+    signal.signal(signal.SIGTERM, trigger_quit)
+    print('Attached, hit ^] (Ctrl+]) and then q to disconnect', end='\r\n')
 
     try:
         escape_read = False
         while True:
-            r, _, _ = select.select([stdin, sock], [], [])
+            r, _, _ = select.select([should_quit, stdin, sock], [], [])
+            if should_quit in r:
+                break
             if stdin in r:
                 data = sys.stdin.buffer.read(1)
                 if escape_read:
@@ -89,7 +106,7 @@ def console(client, _):
                         # The user wants to quit
                         break
 
-                    # They don't want to, lets send the escape key along with their data
+                    # They don't want to quit, lets send the escape key along with their data
                     sock.sendall(CONSOLE_ESCAPE + data)
                     escape_read = False
                 elif data == CONSOLE_ESCAPE:
@@ -97,8 +114,13 @@ def console(client, _):
                 else:
                     sock.sendall(data)
             if sock in r:
-                sys.stdout.buffer.write(sock.recv(4096))
+                data = sock.recv(4096)
+                if not data:
+                    break
+
+                sys.stdout.buffer.write(data)
                 sys.stdout.flush()
     finally:
+        # Restore the terminal to its original state
         termios.tcsetattr(stdin, termios.TCSADRAIN, old)
         sock.close()
