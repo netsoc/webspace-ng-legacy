@@ -94,7 +94,11 @@ class ConsoleSession(WebSocketBaseClient):
                     logging.debug('console websocket error')
                     break
             if self.socket_conn in r:
-                read = self.socket_conn.recv(4096)
+                try:
+                    read = self.socket_conn.recv(4096)
+                except:
+                    logging.debug('pipe socket error')
+                    break
                 if not read:
                     # Socket was closed
                     break
@@ -135,7 +139,6 @@ class ConsoleSession(WebSocketBaseClient):
 def check_user(f):
     @wraps(f)
     def wrapper(self, *args):
-        logging.debug('CHECKING USER')
         req = self.server.current_request
         if req.client_user in self.admins:
             return f(self, *args)
@@ -191,8 +194,11 @@ class Manager:
         return container.status
 
     @check_running
-    def console(self, user, container):
-        response = container.api['console'].post(json={}).json()
+    def console(self, user, container, t_width, t_height):
+        response = container.api['console'].post(json={
+            'width': t_width,
+            'height': t_height
+        }).json()
 
         # Get the control websocket path
         operation_id = Operation.extract_operation_id(response['operation'])

@@ -1,20 +1,29 @@
 from functools import wraps
+import sys
+import termios
+import tty
+import socket
+import select
+import shutil
 
 from humanfriendly import format_size
 
 from .. import WebspaceError
 from .client import Client
 
+CONSOLE_ESCAPE = b'\x1d'
+CONSOLE_ESCAPE_QUIT = b'q'
+
 def find_image(client, id_):
-    images = client.images()
+    image_list = client.images()
     # First try to find it by an alias
-    for i in images:
+    for i in image_list:
         for a in i['aliases']:
             if a['name'] == id_:
                 return i
 
     # Otherwise by fingerprint
-    for i in images:
+    for i in image_list:
         if i['fingerprint'] == id_:
             return i
 
@@ -52,10 +61,44 @@ def init(client, args):
     print('Success!')
 
 @cmd
-def status(client, args):
+def status(client, _):
     info = client.status()
     print('Container status: {}'.format(info))
 
 @cmd
-def console(client, args):
-    print(client.console())
+def console(client, _):
+    print('Attaching to console...')
+    t_width, t_height = shutil.get_terminal_size()
+    sock_path = client.console(t_width, t_height)
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    sock.connect(sock_path)
+
+    stdin = sys.stdin.fileno()
+    old = termios.tcgetattr(stdin)
+    tty.setraw(stdin)
+    print('Hit ^] (Ctrl+]) and then q to disconnect', end='\r\n')
+
+    try:
+        escape_read = False
+        while True:
+            r, _, _ = select.select([stdin, sock], [], [])
+            if stdin in r:
+                data = sys.stdin.buffer.read(1)
+                if escape_read:
+                    if data == CONSOLE_ESCAPE_QUIT:
+                        # The user wants to quit
+                        break
+
+                    # They don't want to, lets send the escape key along with their data
+                    sock.sendall(CONSOLE_ESCAPE + data)
+                    escape_read = False
+                elif data == CONSOLE_ESCAPE:
+                    escape_read = True
+                else:
+                    sock.sendall(data)
+            if sock in r:
+                sys.stdout.buffer.write(sock.recv(4096))
+                sys.stdout.flush()
+    finally:
+        termios.tcsetattr(stdin, termios.TCSADRAIN, old)
+        sock.close()
