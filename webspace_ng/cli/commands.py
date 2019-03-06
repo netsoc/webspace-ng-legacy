@@ -55,3 +55,7 @@ def init(client, args):
 def status(client, args):
     info = client.status()
     print('Container status: {}'.format(info))
+
+@cmd
+def console(client, args):
+    print(client.console())

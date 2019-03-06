@@ -32,5 +32,8 @@ def main():
     p_status = subparsers.add_parser('status', help='Show the status of your container')
     p_status.set_defaults(func=status)
 
+    p_console = subparsers.add_parser('console', help="Attach to your container's console")
+    p_console.set_defaults(func=console)
+
     args = parser.parse_args()
     args.func(args)

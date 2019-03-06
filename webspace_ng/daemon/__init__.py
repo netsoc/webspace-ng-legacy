@@ -42,3 +42,5 @@ def main():
     # RPC main loop
     server.serve_forever()
     server.server_close()
+
+    manager.stop()
