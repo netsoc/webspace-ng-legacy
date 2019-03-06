@@ -116,6 +116,10 @@ def status(client, _args):
     print('Container status: {}'.format(info))
 
 @cmd
+def log(client, _args):
+    print(client.log())
+
+@cmd
 def console(client, _args):
     print('Attaching to console...')
     t_width, t_height = shutil.get_terminal_size()

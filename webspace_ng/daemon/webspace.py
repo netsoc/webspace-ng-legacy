@@ -178,7 +178,7 @@ def check_console(f):
     return wrapper
 
 class Manager:
-    allowed = {'images', 'init', 'status', 'console', 'console_close',
+    allowed = {'images', 'init', 'status', 'log', 'console', 'console_close',
                'console_resize', 'shutdown', 'reboot', 'delete'}
 
     def __init__(self, config, server):
@@ -222,6 +222,11 @@ class Manager:
     @check_init
     def status(self, _, container):
         return container.status
+
+    @check_running
+    def log(self, _user, container):
+        response = container.api['console'].get()
+        return response.text
 
     @check_running
     def console(self, user, container, t_width, t_height):
