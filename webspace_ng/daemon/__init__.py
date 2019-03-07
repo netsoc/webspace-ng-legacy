@@ -53,7 +53,12 @@ def load_config():
                 'cidr': '10.233.0.0/24',
                 'container_iface': 'eth0'
             }
-        }
+        },
+        'defaults': {
+            'terminate_ssl': 'true',
+            'startup_delay': '3'
+        },
+        'max_startup_delay': 60
     }
 
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)

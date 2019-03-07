@@ -21,6 +21,14 @@ from ws4py.messaging import TextMessage
 
 from .. import ADMIN_GROUP, WebspaceError
 
+def str2bool(s):
+    ls = s.lower()
+    if ls == 'true':
+        return True
+    if ls == 'false':
+        return False
+    raise ValueError('Invalid boolean value {}'.format(s))
+
 def image_info(image):
     return {
         'fingerprint': image.fingerprint,
@@ -189,7 +197,7 @@ def check_console(f):
 
 class Manager:
     allowed = {'images', 'init', 'status', 'log', 'console', 'console_close',
-               'console_resize', 'shutdown', 'reboot', 'delete', 'boot_and_url',
+               'console_resize', 'shutdown', 'reboot', 'delete', 'boot_and_host',
                'get_config', 'set_option', 'unset_option'}
 
     def __init__(self, config, server):
@@ -200,6 +208,10 @@ class Manager:
         self.server = server
         self.admins = set(grp.getgrnam(ADMIN_GROUP).gr_mem)
         self.console_sessions = {}
+        self.reserved_options = {
+            'terminate_ssl': str2bool,
+            'startup_delay': self.startup_delay
+        }
 
     def _stop(self):
         for session in self.console_sessions.values():
@@ -215,8 +227,17 @@ class Manager:
             'source': {
                 'type': 'image',
                 'fingerprint': image
+            },
+            'config': {
+                'user.terminate_ssl': self.config.defaults.terminate_ssl,
+                'user.startup_delay': self.config.defaults.startup_delay
             }
         }
+    def startup_delay(self, i):
+        i = int(i)
+        if i > self.config.max_startup_delay:
+            raise ValueError('Startup delay is too large (max {})'.format(self.config.max_startup_delay))
+        return i
 
     @check_user
     def images(self, _):
@@ -296,16 +317,29 @@ class Manager:
 
     @check_init
     def set_option(self, _user, container, key, value):
+        if key in self.reserved_options:
+            # Validate the input before setting
+            self.reserved_options[key](value)
+
         container.config['user.{}'.format(key)] = value
         container.save()
 
     @check_init
     def unset_option(self, _user, container, key):
+        if key in self.reserved_options:
+            raise WebspaceError('{} is a reserved option and may not be unset'.format(key))
+
         del container.config['user.{}'.format(key)]
         container.save()
 
+    def get_user_option(self, container, key):
+        value = container.config['user.{}'.format(key)]
+        if key in self.reserved_options:
+            return self.reserved_options[key](value)
+        return value
+
     @check_admin
-    def boot_and_url(self, user, https_hint):
+    def boot_and_host(self, user, https_hint):
         container_name = self.user_container(user)
         if not self.client.containers.exists(container_name):
             return None, 'init'
@@ -315,7 +349,7 @@ class Manager:
             logging.info('booting container for %s', user)
             container.start(wait=True)
             # Wait for the container to get an IP
-            time.sleep(3)
+            time.sleep(self.get_user_option(container, 'startup_delay'))
 
         info = container.state()
         if self.config.lxd.net.container_iface not in info.network:
@@ -326,7 +360,8 @@ class Manager:
                              lambda i: i['family'] == 'inet',
                              info.network[self.config.lxd.net.container_iface]['addresses'])):
             if ip in self.config.lxd.net.cidr:
-                return 'http://{}'.format(ip), None
+                scheme = 'https' if https_hint and not self.get_user_option(container, 'terminate_ssl') else 'http'
+                return scheme, str(ip)
 
         return None, 'ip'
 
