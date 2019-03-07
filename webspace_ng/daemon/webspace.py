@@ -151,6 +151,14 @@ def check_user(f):
             return f(self, *args)
         return f(self, req.client_user, *args)
     return wrapper
+def check_admin(f):
+    @wraps(f)
+    def wrapper(self, *args):
+        req = self.server.current_request
+        if req.client_user not in self.admins:
+            raise WebspaceError('You must be an admin to call this function')
+        return f(self, *args)
+    return wrapper
 def check_init(f):
     @wraps(f)
     @check_user
@@ -281,7 +289,7 @@ class Manager:
             container.stop(wait=True)
         container.delete(wait=True)
 
-    @check_user
+    @check_admin
     def boot_and_url(self, user):
         container_name = self.user_container(user)
         if not self.client.containers.exists(container_name):
