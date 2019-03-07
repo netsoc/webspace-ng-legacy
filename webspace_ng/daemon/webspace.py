@@ -189,7 +189,8 @@ def check_console(f):
 
 class Manager:
     allowed = {'images', 'init', 'status', 'log', 'console', 'console_close',
-               'console_resize', 'shutdown', 'reboot', 'delete', 'boot_and_url'}
+               'console_resize', 'shutdown', 'reboot', 'delete', 'boot_and_url',
+               'get_config', 'set_option', 'unset_option'}
 
     def __init__(self, config, server):
         self.config = config
@@ -289,8 +290,22 @@ class Manager:
             container.stop(wait=True)
         container.delete(wait=True)
 
+    @check_init
+    def get_config(self, _user, container):
+        return {k[len('user.'):]: v for k, v in container.config.items() if k.startswith('user.')}
+
+    @check_init
+    def set_option(self, _user, container, key, value):
+        container.config['user.{}'.format(key)] = value
+        container.save()
+
+    @check_init
+    def unset_option(self, _user, container, key):
+        del container.config['user.{}'.format(key)]
+        container.save()
+
     @check_admin
-    def boot_and_url(self, user):
+    def boot_and_url(self, user, https_hint):
         container_name = self.user_container(user)
         if not self.client.containers.exists(container_name):
             return None, 'init'

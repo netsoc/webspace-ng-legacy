@@ -212,3 +212,16 @@ def delete(client, _args):
 
     with process('Deleting your container...'):
         client.delete()
+
+@cmd
+def config_show(client, args):
+    config = client.get_config()
+    print('Container configuration:')
+    for k, v in config.items():
+        print('{}: {}'.format(k, v))
+@cmd
+def config_set(client, args):
+    client.set_option(args.key, args.value)
+@cmd
+def config_unset(client, args):
+    client.unset_option(args.key)

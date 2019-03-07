@@ -16,9 +16,7 @@ def main():
         parser.add_argument('-u', '--user', help='User to perform operations as',
                             default=current_user)
 
-    subparsers = parser.add_subparsers()
-    subparsers.required = True
-    subparsers.dest = 'command'
+    subparsers = parser.add_subparsers(required=True, dest='command')
 
     p_images = subparsers.add_parser('images', help='List available images')
     p_images.set_defaults(func=images)
@@ -46,6 +44,22 @@ def main():
 
     p_delete = subparsers.add_parser('delete', help='Delete your container')
     p_delete.set_defaults(func=delete)
+
+    p_config = subparsers.add_parser('config', help="Change your container's options")
+    p_config.set_defaults(func=config_show)
+    cfg_sub = p_config.add_subparsers(dest='cfg_command')
+
+    cfg_show = cfg_sub.add_parser('show', help='Show container configuration')
+    cfg_show.set_defaults(function=config_show)
+
+    cfg_set = cfg_sub.add_parser('set', help='Set a config option')
+    cfg_set.add_argument('key', help='Key of option to set')
+    cfg_set.add_argument('value', help='Value of option to set')
+    cfg_set.set_defaults(func=config_set)
+
+    cfg_delete = cfg_sub.add_parser('unset', help='Delete a config option')
+    cfg_delete.add_argument('key', help='Key of option to delete')
+    cfg_delete.set_defaults(func=config_unset)
 
     args = parser.parse_args()
     args.func(args)
