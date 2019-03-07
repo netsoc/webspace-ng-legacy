@@ -14,6 +14,24 @@ import xmlrpc.client
 
 SO_PEERCRED = 17
 
+# We have to monkey patch the int marshalling code since
+# it will fail if an `int` is out of 32-bit signed range instead
+# of writing an XML-RPC i8
+MAXLONG = 2**63-1
+MINLONG = -2**63
+def dump_long(self, value, write):
+    if value > MAXLONG or value < MINLONG:
+        raise OverflowError('int exceedes XML-RPC i8 limits')
+    if value > xmlrpc.client.MAXINT or value < xmlrpc.client.MININT:
+        print('writing i8 instead of int')
+        write("<value><i8>")
+        write(str(int(value)))
+        write("</i8></value>\n")
+    else:
+        self.dump_int(value, write)
+xmlrpc.client.Marshaller.dump_long = dump_long
+xmlrpc.client.Marshaller.dispatch[int] = dump_long
+
 class UnixStreamRequestHandler(StreamRequestHandler):
     def setup(self):
         super(UnixStreamRequestHandler, self).setup()
