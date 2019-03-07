@@ -1,10 +1,12 @@
 from urllib import parse
 from functools import wraps
+import ipaddress
 import json
 import logging
 import grp
 import stat
 import os
+import time
 from os import path
 import shutil
 import threading
@@ -179,7 +181,7 @@ def check_console(f):
 
 class Manager:
     allowed = {'images', 'init', 'status', 'log', 'console', 'console_close',
-               'console_resize', 'shutdown', 'reboot', 'delete'}
+               'console_resize', 'shutdown', 'reboot', 'delete', 'boot_and_url'}
 
     def __init__(self, config, server):
         self.config = config
@@ -278,6 +280,32 @@ class Manager:
         if container.status_code == 103:
             container.stop(wait=True)
         container.delete(wait=True)
+
+    @check_user
+    def boot_and_url(self, user):
+        container_name = self.user_container(user)
+        if not self.client.containers.exists(container_name):
+            return None, 'init'
+
+        container = self.client.containers.get(container_name)
+        if container.status_code != 103:
+            logging.info('booting container for %s', user)
+            container.start(wait=True)
+            # Wait for the container to get an IP
+            time.sleep(3)
+
+        info = container.state()
+        if self.config.lxd.net.container_iface not in info.network:
+            return None, 'iface'
+        for ip in map(
+                      lambda i: ipaddress.IPv4Address(i['address']),
+                      filter(
+                             lambda i: i['family'] == 'inet',
+                             info.network[self.config.lxd.net.container_iface]['addresses'])):
+            if ip in self.config.lxd.net.cidr:
+                return 'http://{}'.format(ip), None
+
+        return None, 'ip'
 
     def _dispatch(self, method, params):
         if not method in Manager.allowed:

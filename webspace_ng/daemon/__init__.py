@@ -2,6 +2,7 @@ import logging
 import signal
 import threading
 import argparse
+import ipaddress
 import os
 from os import path
 
@@ -47,7 +48,11 @@ def load_config():
         'lxd': {
             'socket': '/var/lib/lxd/unix.socket',
             'profile': 'webspace',
-            'suffix': '-ws'
+            'suffix': '-ws',
+            'net': {
+                'cidr': '10.233.0.0/24',
+                'container_iface': 'eth0'
+            }
         }
     }
 
@@ -70,6 +75,7 @@ def load_config():
         merge(yaml_dict, config)
 
     config = Munch.fromDict(config)
+    config.lxd.net.cidr = ipaddress.IPv4Network(config.lxd.net.cidr)
     if args.bind_socket is not None:
         config.bind_socket = args.bind_socket
     if args.lxd_socket is not None:
