@@ -167,7 +167,7 @@ def console(client, _args):
     try:
         escape_read = False
         while True:
-            r, _, _ = select.select([should_quit, stdin, sock], [], [])
+            r, _, _ = select.select([should_quit, sys.stdin, sock], [], [])
             if should_quit in r:
                 break
             if sys.stdin in r:
