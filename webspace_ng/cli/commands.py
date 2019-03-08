@@ -1,5 +1,6 @@
 from functools import wraps
 import sys
+import os
 import signal
 import termios
 import tty
@@ -154,7 +155,7 @@ def console(client, _args):
 
     stdin = sys.stdin.fileno()
     old = termios.tcgetattr(stdin)
-    tty.setraw(stdin)
+    tty.setraw(stdin, when=termios.TCSANOW)
 
     should_quit = EventFD()
     def trigger_quit(_signum, _frame):
@@ -169,8 +170,8 @@ def console(client, _args):
             r, _, _ = select.select([should_quit, stdin, sock], [], [])
             if should_quit in r:
                 break
-            if stdin in r:
-                data = sys.stdin.buffer.read(1)
+            if sys.stdin in r:
+                data = os.read(stdin, 1)
                 if escape_read:
                     if data == CONSOLE_ESCAPE_QUIT:
                         # The user wants to quit
@@ -192,7 +193,7 @@ def console(client, _args):
                 sys.stdout.flush()
     finally:
         # Restore the terminal to its original state
-        termios.tcsetattr(stdin, termios.TCSADRAIN, old)
+        termios.tcsetattr(stdin, termios.TCSANOW, old)
         sock.close()
 
 @cmd
