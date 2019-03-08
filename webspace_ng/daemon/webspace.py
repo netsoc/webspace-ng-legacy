@@ -237,6 +237,8 @@ class Manager:
         i = int(i)
         if i > self.config.max_startup_delay:
             raise ValueError('Startup delay is too large (max {})'.format(self.config.max_startup_delay))
+        if i < 0:
+            raise ValueError('Startup delay must be positive')
         return i
 
     @check_user
