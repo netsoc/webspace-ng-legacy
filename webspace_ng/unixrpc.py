@@ -23,7 +23,6 @@ def dump_long(self, value, write):
     if value > MAXLONG or value < MINLONG:
         raise OverflowError('int exceedes XML-RPC i8 limits')
     if value > xmlrpc.client.MAXINT or value < xmlrpc.client.MININT:
-        print('writing i8 instead of int')
         write("<value><i8>")
         write(str(int(value)))
         write("</i8></value>\n")
