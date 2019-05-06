@@ -4,3 +4,4 @@ ruamel.yaml>=0.15.0
 pylxd>=2.2.0
 ws4py>=0.5.0
 eventfd>=0.2
+dnspython>=1.16.0

@@ -22,12 +22,23 @@ local function memc_close()
   end
 end
 
-local res, err = rpc.call(constants.webspaced_sock, 'boot_and_host', ngx.var.user, false)
+local res, err = rpc.call(constants.webspaced_sock, 'boot_and_host', ngx.var.host, false)
 if not res then
+
   ngx.log(ngx.ERR, json.encode(err))
   memc_close()
   return ngx.exec('/__webspace-error?type=webspaced_request')
 elseif res[1] == 'nil' then
+  if res[2] == 'not_webspace' then
+    ngx.log(ngx.DEBUG, 'not a webspace: ', ngx.var.request_uri)
+    memc_close()
+    if ngx.var.uri == '/' then
+	  return ngx.exec('/__non-webspace/index.html')
+    else
+	  return ngx.exec('/__non-webspace'..ngx.var.request_uri)
+    end
+  end
+
   ngx.log(ngx.ERR, res[2])
   memc_close()
   return ngx.exec('/__webspace-error?type=webspaced_'..res[2])

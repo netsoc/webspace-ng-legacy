@@ -4,6 +4,7 @@ import ipaddress
 from queue import Queue
 import json
 import logging
+import pwd
 import grp
 import stat
 import os
@@ -19,6 +20,7 @@ from pylxd import Client
 from pylxd.models import Operation
 from ws4py.client import WebSocketBaseClient
 from ws4py.messaging import TextMessage
+import dns.resolver
 
 from .. import ADMIN_GROUP, WebspaceError
 
@@ -157,6 +159,10 @@ def check_user(f):
     def wrapper(self, *args):
         req = self.server.current_request
         if req.client_user in self.admins:
+            try:
+                pwd.getpwnam(args[0])
+            except KeyError:
+                raise WebspaceError('User {} does not exist'.format(args[0]))
             return f(self, *args)
         return f(self, req.client_user, *args)
     return wrapper
@@ -199,7 +205,9 @@ def check_console(f):
 class Manager:
     allowed = {'images', 'init', 'status', 'log', 'console', 'console_close',
                'console_resize', 'shutdown', 'reboot', 'delete', 'boot_and_host',
-               'get_config', 'set_option', 'unset_option'}
+               'get_config', 'set_option', 'unset_option', 'get_domains',
+               'add_domain', 'remove_domain'}
+    private_options = {'_domains'}
 
     def __init__(self, config, server):
         self.config = config
@@ -218,8 +226,13 @@ class Manager:
             lambda c: c.name.endswith(self.config.lxd.suffix) and c.status_code == 103,
             self.client.containers.all())))
         self.container_lock = threading.RLock()
-
         logging.debug('containers running at startup: %s', self.running_containers)
+
+        self.custom_domains = {}
+        for container in filter(lambda c: c.name.endswith(self.config.lxd.suffix), self.client.containers.all()):
+            for domain in self.get_container_domains(container):
+                self.custom_domains[domain] = container.name[:-len(self.config.lxd.suffix)]
+        logging.debug('existing custom domain configuration: %s', self.custom_domains)
 
     def _stop(self):
         for session in self.console_sessions.values():
@@ -233,6 +246,8 @@ class Manager:
 
     def user_container(self, user):
         return '{}{}'.format(user, self.config.lxd.suffix)
+    def user_domain(self, user):
+        return '{}{}'.format(user, self.config.domain_suffix)
     def get_new_config(self, user, image):
         return {
             'name': self.user_container(user),
@@ -244,7 +259,8 @@ class Manager:
             },
             'config': {
                 'user.terminate_ssl': self.config.defaults.terminate_ssl,
-                'user.startup_delay': self.config.defaults.startup_delay
+                'user.startup_delay': self.config.defaults.startup_delay,
+                'user._domains': ''
             }
         }
     def startup_delay(self, i):
@@ -254,6 +270,16 @@ class Manager:
         if i < 0:
             raise ValueError('Startup delay must be positive')
         return i
+    def get_user_option(self, container, key):
+        value = container.config['user.{}'.format(key)]
+        if key in self.reserved_options:
+            return self.reserved_options[key](value)
+        return value
+    def get_container_domains(self, container):
+        return list(filter(lambda d: len(d) > 0, container.config['user._domains'].split(',')))
+    def set_container_domains(self, container, domains):
+        container.config['user._domains'] = ','.join(domains)
+        container.save()
     def start_container(self, container):
         with self.container_lock:
             if len(self.running_containers) == self.config.run_limit:
@@ -348,10 +374,12 @@ class Manager:
 
     @check_init
     def get_config(self, _user, container):
-        return {k[len('user.'):]: v for k, v in container.config.items() if k.startswith('user.')}
+        return {k[len('user.'):]: v for k, v in container.config.items() if k.startswith('user.') and not k[len('user.'):] in Manager.private_options}
 
     @check_init
     def set_option(self, _user, container, key, value):
+        if key in Manager.private_options:
+            raise WebspaceError('{} is a private option and may not be set'.format(key))
         if key in self.reserved_options:
             # Validate the input before setting
             self.reserved_options[key](value)
@@ -361,20 +389,29 @@ class Manager:
 
     @check_init
     def unset_option(self, _user, container, key):
-        if key in self.reserved_options:
-            raise WebspaceError('{} is a reserved option and may not be unset'.format(key))
+        if key in Manager.private_options or self.reserved_options:
+            raise WebspaceError('{} is a reserved/private option and may not be unset'.format(key))
 
         del container.config['user.{}'.format(key)]
         container.save()
 
-    def get_user_option(self, container, key):
-        value = container.config['user.{}'.format(key)]
-        if key in self.reserved_options:
-            return self.reserved_options[key](value)
-        return value
-
     @check_admin
-    def boot_and_host(self, user, https_hint):
+    def boot_and_host(self, host, https_hint):
+        wildcard_host = '*'+host[host.find('.'):]
+        if host in self.custom_domains:
+            user = self.custom_domains[host]
+        elif wildcard_host in self.custom_domains:
+            # Wildcard domain
+            user = self.custom_domains[wildcard_host]
+        elif host.endswith(self.config.domain_suffix):
+            user = host[:-len(self.config.domain_suffix)]
+            try:
+                pwd.getpwnam(user)
+            except KeyError:
+                return None, 'user'
+        else:
+            return None, 'not_webspace'
+
         container_name = self.user_container(user)
         if not self.client.containers.exists(container_name):
             return None, 'init'
@@ -396,6 +433,38 @@ class Manager:
                 return scheme, str(ip)
 
         return None, 'ip'
+
+    @check_init
+    def get_domains(self, user, container):
+        return [self.user_domain(user)] + self.get_container_domains(container)
+
+    @check_init
+    def add_domain(self, user, container, domain):
+        if domain in self.custom_domains:
+            raise WebspaceError("'{}' has already been configured as a custom domain")
+
+        answer = dns.resolver.query(domain, 'CNAME')
+        verified = False
+        for rdata in answer:
+            if rdata.target.to_text().rstrip('.') == self.user_domain(user):
+                verified = True
+                break
+
+        if not verified:
+            raise WebspaceError("'{}' has not been verified".format(domain))
+
+        self.custom_domains[domain] = user
+        self.set_container_domains(container, self.get_container_domains(container) + [domain])
+
+    @check_init
+    def remove_domain(self, user, container, domain):
+        if not domain in self.custom_domains:
+            raise WebspaceError("'{}' has not been configured as a custom domain")
+
+        del self.custom_domains[domain]
+        domains = self.get_container_domains(container)
+        domains.remove(domain)
+        self.set_container_domains(container, domains)
 
     def _dispatch(self, method, params):
         if not method in Manager.allowed:

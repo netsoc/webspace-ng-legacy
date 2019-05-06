@@ -226,3 +226,16 @@ def config_set(client, args):
 @cmd
 def config_unset(client, args):
     client.unset_option(args.key)
+
+@cmd
+def domains_show(client, args):
+    domains = client.get_domains()
+    print('Container domains:')
+    for domain in domains:
+        print(' - {}'.format(domain))
+@cmd
+def domains_add(client, args):
+    client.add_domain(args.domain)
+@cmd
+def domains_remove(client, args):
+    client.remove_domain(args.domain)

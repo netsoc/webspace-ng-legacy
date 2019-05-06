@@ -61,5 +61,20 @@ def main():
     cfg_delete.add_argument('key', help='Key of option to delete')
     cfg_delete.set_defaults(func=config_unset)
 
+    p_dns = subparsers.add_parser('domains', help='Configure custom domains')
+    p_dns.set_defaults(func=domains_show)
+    dns_sub = p_dns.add_subparsers(dest='dns_command')
+
+    dns_show = dns_sub.add_parser('show', help='Show configured custom domains')
+    dns_show.set_defaults(function=domains_show)
+
+    dns_add = dns_sub.add_parser('add', help='Add a custom domain')
+    dns_add.add_argument('domain', help='Domain to add')
+    dns_add.set_defaults(func=domains_add)
+
+    dns_remove = dns_sub.add_parser('remove', help='Remove a custom domain')
+    dns_remove.add_argument('domain', help='Domain to remove')
+    dns_remove.set_defaults(func=domains_remove)
+
     args = parser.parse_args()
     args.func(args)

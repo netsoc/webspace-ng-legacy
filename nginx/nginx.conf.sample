@@ -51,11 +51,18 @@ http {
 		}
 	}
 	server {
-		listen 80;
-		listen unix:/var/run/openresty-https.sock ssl http2;
+		listen 80 default_server;
+		listen unix:/var/run/openresty-https.sock ssl http2 default_server;
 
-		# Replace with a regex suitable for your configuration
-		server_name ~^(?<user>\w+)-ng\.localhost$;
+		location /__non-webspace {
+			rewrite ^/__non-webspace/(.*) /$1 break;
+			root html;
+			index index.html index.htm;
+		}
+		error_page 500 502 503 504 /50x.html;
+		location = /50x.html {
+			root html;
+		}
 
 		set $template_root /path/to/webspace-ng/nginx;
 		location / {
@@ -73,21 +80,6 @@ http {
 		location = /__webspace-error {
 			default_type 'text/html';
 			content_by_lua_file /path/to/webspace-ng/nginx/webspace_error.lua;
-		}
-	}
-	server {
-		listen 80 default_server;
-		listen unix:/var/run/openresty-https.sock ssl http2 default_server;
-		server_name localhost;
-
-		location / {
-		    root   html;
-		    index  index.html index.htm;
-		}
-
-		error_page 500 502 503 504 /50x.html;
-		location = /50x.html {
-		    root   html;
 		}
 	}
 }

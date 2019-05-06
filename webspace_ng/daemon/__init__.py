@@ -58,6 +58,7 @@ def load_config():
             'terminate_ssl': 'true',
             'startup_delay': '3'
         },
+        'domain_suffix': '-ng.localhost',
         'max_startup_delay': 60,
         'run_limit': 20
     }
