@@ -1,0 +1,93 @@
+user root;
+worker_processes 1;
+
+error_log /var/log/openresty/error.log warn;
+
+events {
+	worker_connections 1024;
+}
+
+stream {
+	lua_shared_dict webspace 16k;
+	lua_package_path "/path/to/webspace-ng/nginx/?/init.lua;/path/to/webspace-ng/nginx/?.lua;;";
+
+	upstream backend {
+		server 0.0.0.1:1234; # dummy value
+		server 0.0.0.1:5678; # dummy value 2
+		balancer_by_lua_file /path/to/webspace-ng/nginx/ssl_backend.lua;
+	}
+	server {
+		listen 443;
+		ssl_preread on;
+		lua_check_client_abort on;
+
+		preread_by_lua_file /path/to/webspace-ng/nginx/ssl_preread.lua;
+		proxy_pass backend;
+	}
+}
+
+http {
+	lua_package_path "/path/to/webspace-ng/nginx/?/init.lua;/path/to/webspace-ng/nginx/?.lua;;";
+
+	ssl_certificate cert.pem;
+	ssl_certificate_key key.pem;
+
+	server {
+		# Stream SSL 502 error
+		listen unix:/var/run/openresty-https-502.sock ssl http2;
+		location / {
+			proxy_set_header Host dummy-ng.localhost;
+			rewrite .* /__webspace-error?type=ssl_502 break;
+			proxy_pass http://localhost;
+		}
+	}
+	server {
+		# Stream error server
+		listen unix:/var/run/openresty-https-error.sock ssl http2;
+		location / {
+			proxy_set_header Host dummy-ng.localhost;
+			rewrite_by_lua_file /path/to/webspace-ng/nginx/https_error.lua;
+			proxy_pass http://localhost;
+		}
+	}
+	server {
+		listen 80;
+		listen unix:/var/run/openresty-https.sock ssl http2;
+
+		# Replace with a regex suitable for your configuration
+		server_name ~^(?<user>\w+)-ng\.localhost$;
+
+		set $template_root /path/to/webspace-ng/nginx;
+		location / {
+			set $target '';
+			set $real_source $remote_addr;
+			rewrite_by_lua_file /path/to/webspace-ng/nginx/webspace_rewrite.lua;
+
+			proxy_set_header Host $http_host;
+			proxy_set_header X-Real-IP $real_source;
+			proxy_set_header X-Forwarded-For $real_source;
+			proxy_set_header X-Forwarded-Proto $scheme;
+			proxy_pass http://$target;
+			error_page 502 /__webspace-error?type=502;
+		}
+		location = /__webspace-error {
+			default_type 'text/html';
+			content_by_lua_file /path/to/webspace-ng/nginx/webspace_error.lua;
+		}
+	}
+	server {
+		listen 80 default_server;
+		listen unix:/var/run/openresty-https.sock ssl http2 default_server;
+		server_name localhost;
+
+		location / {
+		    root   html;
+		    index  index.html index.htm;
+		}
+
+		error_page 500 502 503 504 /50x.html;
+		location = /50x.html {
+		    root   html;
+		}
+	}
+}
