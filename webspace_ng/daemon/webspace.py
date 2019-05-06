@@ -1,6 +1,7 @@
 from urllib import parse
 from functools import wraps
 import ipaddress
+from queue import Queue
 import json
 import logging
 import grp
@@ -213,9 +214,22 @@ class Manager:
             'startup_delay': self.startup_delay
         }
 
+        self.running_containers = list(map(lambda c: c.name, filter(
+            lambda c: c.name.endswith(self.config.lxd.suffix) and c.status_code == 103,
+            self.client.containers.all())))
+        self.container_lock = threading.RLock()
+
+        logging.debug('containers running at startup: %s', self.running_containers)
+
     def _stop(self):
         for session in self.console_sessions.values():
             session.stop(join=True)
+
+        with self.container_lock:
+            for c in self.running_containers:
+                container = self.client.containers.get(c)
+                if container.status_code == 103:
+                    container.stop(wait=True)
 
     def user_container(self, user):
         return '{}{}'.format(user, self.config.lxd.suffix)
@@ -240,6 +254,20 @@ class Manager:
         if i < 0:
             raise ValueError('Startup delay must be positive')
         return i
+    def start_container(self, container):
+        with self.container_lock:
+            if len(self.running_containers) == self.config.run_limit:
+                c = self.running_containers.pop(0)
+                to_shutdown = self.client.containers.get(c)
+                if to_shutdown.status_code == 103:
+                    logging.debug('at run limit, shutting down container %s', to_shutdown.name)
+                    to_shutdown.stop(wait=True)
+
+            logging.info('booting container %s', container.name)
+            container.start(wait=True)
+            self.running_containers.append(container.name)
+            # Wait for the container to get an IP
+            time.sleep(self.get_user_option(container, 'startup_delay'))
 
     @check_user
     def images(self, _):
@@ -262,8 +290,11 @@ class Manager:
         response = container.api['console'].get()
         return response.text
 
-    @check_running
+    @check_init
     def console(self, user, container, t_width, t_height):
+        if container.status_code != 103:
+            self.start_container(container)
+
         response = container.api['console'].post(json={
             'width': t_width,
             'height': t_height
@@ -301,7 +332,9 @@ class Manager:
 
     @check_running
     def shutdown(self, _user, container):
-        container.stop(wait=True)
+        with self.container_lock:
+            container.stop(wait=True)
+            self.running_containers.remove(container.name)
 
     @check_running
     def reboot(self, _user, container):
@@ -348,10 +381,7 @@ class Manager:
 
         container = self.client.containers.get(container_name)
         if container.status_code != 103:
-            logging.info('booting container for %s', user)
-            container.start(wait=True)
-            # Wait for the container to get an IP
-            time.sleep(self.get_user_option(container, 'startup_delay'))
+            self.start_container(container)
 
         info = container.state()
         if self.config.lxd.net.container_iface not in info.network:

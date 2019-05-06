@@ -58,7 +58,8 @@ def load_config():
             'terminate_ssl': 'true',
             'startup_delay': '3'
         },
-        'max_startup_delay': 60
+        'max_startup_delay': 60,
+        'run_limit': 20
     }
 
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -93,6 +94,9 @@ def load_config():
     if args.verbose and args.verbose >= 1:
         level = logging.DEBUG
     logging.basicConfig(level=level, format='[{asctime:s}] {levelname:s}: {message:s}', style='{')
+
+    if config.run_limit <= 0:
+        raise WebspaceError('Configuration must allow at least one container to run')
 
     return config
 
