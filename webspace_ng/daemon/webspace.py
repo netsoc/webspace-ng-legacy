@@ -104,6 +104,8 @@ class Manager:
         self.container_lock = threading.RLock()
         logging.debug('containers running at startup: %s', self.running_containers)
 
+        self.ip_cache = {}
+
         self.custom_domains = {}
         for container in filter(lambda c: c.name.endswith(self.config.lxd.suffix), self.client.containers.all()):
             for domain in self.get_container_domains(container):
@@ -122,6 +124,8 @@ class Manager:
 
     def user_container(self, user):
         return '{}{}'.format(user, self.config.lxd.suffix)
+    def container_user(self, container):
+        return container.name[:-len(self.config.lxd.suffix)]
     def user_domain(self, user):
         return '{}{}'.format(user, self.config.domain_suffix)
     def get_new_config(self, user, image):
@@ -163,13 +167,19 @@ class Manager:
                 to_shutdown = self.client.containers.get(c)
                 if to_shutdown.status_code == 103:
                     logging.debug('at run limit, shutting down container %s', to_shutdown.name)
-                    to_shutdown.stop(wait=True)
+                    self.stop_container(to_shutdown)
 
             logging.info('booting container %s', container.name)
             container.start(wait=True)
             self.running_containers.append(container.name)
             # Wait for the container to get an IP
             time.sleep(self.get_user_option(container, 'startup_delay'))
+    def stop_container(self, container):
+        with self.container_lock:
+            if container.name in self.ip_cache:
+                del self.ip_cache[container.name]
+            self.running_containers.remove(container.name)
+            container.stop(wait=True)
 
     @check_user
     def images(self, _):
@@ -234,18 +244,19 @@ class Manager:
 
     @check_running
     def shutdown(self, _user, container):
-        with self.container_lock:
-            container.stop(wait=True)
-            self.running_containers.remove(container.name)
+        self.stop_container(container)
 
     @check_running
     def reboot(self, _user, container):
-        container.restart(wait=True)
+        with self.container_lock:
+            if container.name in self.ip_cache:
+                del self.ip_cache[container.name]
+            container.restart(wait=True)
 
     @check_init
     def delete(self, _user, container):
         if container.status_code == 103:
-            container.stop(wait=True)
+            self.stop_container(container)
         container.delete(wait=True)
 
     @check_init
@@ -296,19 +307,26 @@ class Manager:
         if container.status_code != 103:
             self.start_container(container)
 
-        info = container.state()
-        if self.config.lxd.net.container_iface not in info.network:
-            return None, 'iface'
-        for ip in map(
-                      lambda i: ipaddress.IPv4Address(i['address']),
-                      filter(
-                             lambda i: i['family'] == 'inet',
-                             info.network[self.config.lxd.net.container_iface]['addresses'])):
-            if ip in self.config.lxd.net.cidr:
-                scheme = 'https' if https_hint and not self.get_user_option(container, 'terminate_ssl') else 'http'
-                return scheme, str(ip)
+        if container.name in self.ip_cache:
+            ip = self.ip_cache[container.name]
+            logging.debug('using cached ip %s for user %s', ip, user)
+        else:
+            info = container.state()
+            if self.config.lxd.net.container_iface not in info.network:
+                return None, 'iface'
+            for ip in map(
+                          lambda i: ipaddress.IPv4Address(i['address']),
+                          filter(
+                                 lambda i: i['family'] == 'inet',
+                                 info.network[self.config.lxd.net.container_iface]['addresses'])):
+                if ip in self.config.lxd.net.cidr:
+                    ip = str(ip)
+                    self.ip_cache[container.name] = ip
 
-        return None, 'ip'
+        if not ip:
+            return None, 'ip'
+        scheme = 'https' if https_hint and not self.get_user_option(container, 'terminate_ssl') else 'http'
+        return scheme, str(ip)
 
     @check_init
     def get_domains(self, user, container):
@@ -329,18 +347,20 @@ class Manager:
         if not verified:
             raise WebspaceError("'{}' has not been verified".format(domain))
 
-        self.custom_domains[domain] = user
-        self.set_container_domains(container, self.get_container_domains(container) + [domain])
+        with self.container_lock:
+            self.custom_domains[domain] = user
+            self.set_container_domains(container, self.get_container_domains(container) + [domain])
 
     @check_init
     def remove_domain(self, user, container, domain):
         if not domain in self.custom_domains:
             raise WebspaceError("'{}' has not been configured as a custom domain")
 
-        del self.custom_domains[domain]
-        domains = self.get_container_domains(container)
-        domains.remove(domain)
-        self.set_container_domains(container, domains)
+        with self.container_lock:
+            del self.custom_domains[domain]
+            domains = self.get_container_domains(container)
+            domains.remove(domain)
+            self.set_container_domains(container, domains)
 
     def _dispatch(self, method, params):
         if not method in Manager.allowed:
