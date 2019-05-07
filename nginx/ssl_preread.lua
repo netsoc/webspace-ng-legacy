@@ -37,6 +37,12 @@ elseif res[1] == 'nil' then
   if res[2] == 'not_webspace' then
     ngx.log(ngx.DEBUG, 'not a webspace')
     shared:set('peer', constants.https_sock)
+
+    local ok, err = memc:set('webspace', 'not_webspace')
+    if not ok then
+      ngx.log(ngx.ERR, 'failed to set memcached value: ', err)
+      shared:set('peer', constants.https_error_sock)
+    end
     return memc_close()
   end
 
@@ -52,10 +58,18 @@ else
   else
     ngx.log(ngx.DEBUG, 'doing ssl termination')
     shared:set('peer', constants.https_sock)
+
+    local ok, err = memc:set('webspace', res[2])
+    if not ok then
+      ngx.log(ngx.ERR, 'failed to set memcached value: ', err)
+      shared:set('peer', constants.https_error_sock)
+      return memc_close()
+    end
     local ok, err = memc:set('ssl_source', ngx.var.remote_addr)
     if not ok then
       ngx.log(ngx.ERR, 'failed to set memcached value: ', err)
       shared:set('peer', constants.https_error_sock)
+      return memc_close()
     end
   end
 end
