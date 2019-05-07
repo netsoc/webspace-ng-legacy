@@ -81,8 +81,8 @@ def check_console(f):
 class Manager:
     allowed = {'images', 'init', 'status', 'log', 'console', 'console_close',
                'console_resize', 'shutdown', 'reboot', 'delete', 'boot_and_host',
-               'get_config', 'set_option', 'unset_option', 'get_domains',
-               'add_domain', 'remove_domain'}
+               'boot_and_ip', 'get_config', 'set_option', 'unset_option',
+               'get_domains', 'add_domain', 'remove_domain'}
     private_options = {'_domains'}
 
     def __init__(self, config, server):
@@ -282,6 +282,26 @@ class Manager:
         del container.config['user.{}'.format(key)]
         container.save()
 
+    def get_container_ip(self, container):
+        if container.status_code != 103:
+            self.start_container(container)
+
+        if container.name in self.ip_cache:
+            ip = self.ip_cache[container.name]
+            logging.debug('using cached ip %s for container %s', ip, container.name)
+        else:
+            info = container.state()
+            if self.config.lxd.net.container_iface not in info.network:
+                raise WebspaceError('iface')
+            for ip in map(
+                          lambda i: ipaddress.IPv4Address(i['address']),
+                          filter(
+                                 lambda i: i['family'] == 'inet',
+                                 info.network[self.config.lxd.net.container_iface]['addresses'])):
+                if ip in self.config.lxd.net.cidr:
+                    ip = str(ip)
+                    self.ip_cache[container.name] = ip
+        return ip
     @check_admin
     def boot_and_host(self, host, https_hint):
         wildcard_host = '*'+host[host.find('.'):]
@@ -304,29 +324,20 @@ class Manager:
             return None, 'init'
 
         container = self.client.containers.get(container_name)
-        if container.status_code != 103:
-            self.start_container(container)
-
-        if container.name in self.ip_cache:
-            ip = self.ip_cache[container.name]
-            logging.debug('using cached ip %s for user %s', ip, user)
-        else:
-            info = container.state()
-            if self.config.lxd.net.container_iface not in info.network:
-                return None, 'iface'
-            for ip in map(
-                          lambda i: ipaddress.IPv4Address(i['address']),
-                          filter(
-                                 lambda i: i['family'] == 'inet',
-                                 info.network[self.config.lxd.net.container_iface]['addresses'])):
-                if ip in self.config.lxd.net.cidr:
-                    ip = str(ip)
-                    self.ip_cache[container.name] = ip
-
-        if not ip:
-            return None, 'ip'
+        try:
+            ip = self.get_container_ip(container)
+        except WebspaceError as ex:
+            return None, str(ex)
         scheme = 'https' if https_hint and not self.get_user_option(container, 'terminate_ssl') else 'http'
         return scheme, str(ip)
+    @check_admin
+    def boot_and_ip(self, user):
+        container_name = self.user_container(user)
+        if not self.client.containers.exists(container_name):
+            raise WebspaceError('container not initialized')
+
+        container = self.client.containers.get(container_name)
+        return self.get_container_ip(container)
 
     @check_init
     def get_domains(self, user, container):
