@@ -56,16 +56,17 @@ elseif res[1] == 'nil' then
   shared:set('peer', constants.https_error_sock)
   memc:set('error_type', 'webspaced_'..res[2])
 else
-  ngx.log(ngx.INFO, res[1]..'://'..res[2])
+  ngx.log(ngx.INFO, res[1]..'://'..res[2]..':'..res[3])
   if res[1] == 'https' then
     ngx.log(ngx.DEBUG, 'user wants their own ssl')
-    shared:set('peer', res[2] .. ':443')
     shared:set('unix', false)
+    shared:set('peer', res[2])
+    shared:set('tcp_port', res[3])
   else
     ngx.log(ngx.DEBUG, 'doing ssl termination')
     shared:set('peer', constants.https_sock)
 
-    local ok, err = memc:set('webspace', res[2])
+    local ok, err = memc:set('webspace', res[2]..':'..res[3])
     if not ok then
       ngx.log(ngx.ERR, 'failed to set memcached value: ', err)
       shared:set('peer', constants.https_error_sock)

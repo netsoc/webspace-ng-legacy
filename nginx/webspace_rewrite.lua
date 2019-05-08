@@ -81,6 +81,6 @@ else
     memc_close()
     return ngx.exec('/__webspace-error?type=webspaced_'..res[2])
   else
-    do_rewrite(res[2])
+    do_rewrite(res[2]..':'..res[3])
   end
 end

@@ -13,5 +13,6 @@ local unix, flags = shared:get('unix')
 if unix then
   balancer.set_current_peer(peer)
 else
-  balancer.set_current_peer(peer, 443)
+  local tcp_port, flags = shared:get('tcp_port')
+  balancer.set_current_peer(peer, tcp_port)
 end

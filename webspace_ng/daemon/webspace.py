@@ -21,6 +21,11 @@ def str2bool(s):
     if ls == 'false':
         return False
     raise ValueError('Invalid boolean value {}'.format(s))
+def port(s):
+    port = int(s)
+    if port <= 0 or port > 65535:
+        raise ValueError('Port must be in the range 1-65535')
+    return port
 
 def image_info(image):
     return {
@@ -95,7 +100,9 @@ class Manager:
         self.console_sessions = {}
         self.reserved_options = {
             'terminate_ssl': str2bool,
-            'startup_delay': self.startup_delay
+            'startup_delay': self.startup_delay,
+            'http_port': port,
+            'https_port': port,
         }
 
         self.running_containers = list(map(lambda c: c.name, filter(
@@ -140,6 +147,8 @@ class Manager:
             'config': {
                 'user.terminate_ssl': self.config.defaults.terminate_ssl,
                 'user.startup_delay': self.config.defaults.startup_delay,
+                'user.http_port': '80',
+                'user.https_port': '443',
                 'user._domains': ''
             }
         }
@@ -329,7 +338,8 @@ class Manager:
         except WebspaceError as ex:
             return None, str(ex)
         scheme = 'https' if https_hint and not self.get_user_option(container, 'terminate_ssl') else 'http'
-        return scheme, str(ip)
+        port = self.get_user_option(container, '{}_port'.format(scheme))
+        return scheme, str(ip), port
     @check_admin
     def boot_and_ip(self, user):
         container_name = self.user_container(user)
