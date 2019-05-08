@@ -17,7 +17,7 @@ stream {
 		balancer_by_lua_file /path/to/webspace-ng/nginx/ssl_backend.lua;
 	}
 	server {
-		listen 443;
+		listen [::]:443 ipv6only=off;
 		ssl_preread on;
 		lua_check_client_abort on;
 
@@ -51,7 +51,7 @@ http {
 		}
 	}
 	server {
-		listen 80 default_server;
+		listen [::]:80 ipv6only=off default_server;
 		listen unix:/var/run/openresty-https.sock ssl http2 default_server;
 
 		location /__non-webspace {
