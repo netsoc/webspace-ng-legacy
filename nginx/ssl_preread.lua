@@ -28,7 +28,8 @@ local function memc_close()
   end
 end
 
-local res, err = rpc.call(constants.webspaced_sock, 'boot_and_host', ngx.var.ssl_preread_server_name, true)
+local server_name = ngx.var.ssl_preread_server_name
+local res, err = rpc.call(constants.webspaced_sock, 'boot_and_host', server_name, true)
 if not res then
   ngx.log(ngx.ERR, json.encode(err))
   shared:set('peer', constants.https_error_sock)
@@ -38,10 +39,15 @@ elseif res[1] == 'nil' then
     ngx.log(ngx.DEBUG, 'not a webspace')
     shared:set('peer', constants.https_sock)
 
-    local ok, err = memc:set('webspace', 'not_webspace')
-    if not ok then
-      ngx.log(ngx.ERR, 'failed to set memcached value: ', err)
-      shared:set('peer', constants.https_error_sock)
+    if not constants.non_webspace_names[server_name] then
+      ngx.log(ngx.DEBUG, 'will match default server, setting not_webspace')
+      local ok, err = memc:set('webspace', 'not_webspace')
+      if not ok then
+        ngx.log(ngx.ERR, 'failed to set memcached value: ', err)
+        shared:set('peer', constants.https_error_sock)
+      end
+    else
+      ngx.log(ngx.DEBUG, 'will _not_ match default server, _not_ setting not_webspace')
     end
     return memc_close()
   end
