@@ -49,3 +49,5 @@ To set this up, you'll need to add `TXT` record in your domain registrar's DNS s
 You'll also need to add a `CNAME` or (`A `/` AAAA` record) pointing to your hoster's server so that requests will actually reach the webspace reverse proxy. **Note that `CNAME` records cannot be created for the root of your domain - you'll need to use an `A` / `AAAA` record instead.**
 
 Wildcard domains (e.g. `*.mywebsite.com`) should also work.
+
+**Note: If you want HTTPS to work correctly (no warning message in the browser), you'll need to disable SSL termination and obtain SSL certificates for your domain(s). SSL termination always uses your hoster's certificate which only works for the default domain.**
