@@ -358,12 +358,13 @@ class Manager:
         if domain in self.custom_domains:
             raise WebspaceError("'{}' has already been configured as a custom domain")
 
-        answer = dns.resolver.query(domain, 'CNAME')
+        answer = dns.resolver.query(domain, 'TXT')
         verified = False
         for rdata in answer:
-            if rdata.target.to_text().rstrip('.') == self.user_domain(user):
-                verified = True
-                break
+            for txt in map(lambda s: s.decode('utf8'), rdata.strings):
+                if txt == 'webspace:{}'.format(user):
+                    verified = True
+                    break
 
         if not verified:
             raise WebspaceError("'{}' has not been verified".format(domain))
