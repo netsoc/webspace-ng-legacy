@@ -13,10 +13,13 @@ See [INSTALL.md](INSTALL.md).
 1. Log into the server hosting `webspace-ng`-based webspaces (e.g. over SSH)
 2. Run `webspace-cli images` to view a list of available Linux distributions to base your container off of
 3. Do `webspace-cli init <your chosen image name / fingerprint>` to set up your container
-4. `webspace-cli console` will attach you to the TTY of your container
-    - Hit enter a few times and you should see a login prompt. The default login details will depend on your chosen image.
-    - Press CTRL+] and then 'q' to detach from the console.
-    - Note that it make take a few seconds to start your container before the console becomes ready.
+4. `webspace-cli exec bash` will give you a shell
+    - `webspace-cli console` will attach you to the TTY of your container.
+        - Hit enter a few times and you should see a login prompt.
+		- The default login details will depend on your chosen image.
+		- _Note: For certain images (e.g. Ubuntu), you might need to use `webspace-cli exec passwd` to set a root password in order to be able to log in_
+        - Press CTRL+] and then 'q' to detach from the console.
+    - Note that it make take a few seconds to start your container before the shell / console becomes ready.
 5. From here you can use your container like a VM and install your webserver of choice
     - Make sure that your chosen webserver is configured to run at container startup - **your container could be shut down at any point to make room for others**
 6. Try reaching your container in your browser!
