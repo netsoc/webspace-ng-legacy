@@ -3,7 +3,7 @@ Description=webspace-ng daemon
 
 [Service]
 Type=simple
-Exec=/usr/local/bin/webspaced
+ExecStart=/usr/local/bin/webspaced
 
 [Install]
 WantedBy=multi-user.target
