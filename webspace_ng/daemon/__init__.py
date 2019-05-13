@@ -58,9 +58,15 @@ def load_config():
             'terminate_ssl': 'true',
             'startup_delay': '3'
         },
-        'domain_suffix': '-ng.localhost',
+        'domain_suffix': '.ng.localhost',
         'max_startup_delay': 60,
-        'run_limit': 20
+        'run_limit': 20,
+        'ports': {
+            'proxy_bin': '/usr/local/bin/webspace-tcp-proxy',
+            'start': 49152,
+            'end': 65535,
+            'max': 64
+        }
     }
 
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -70,6 +76,8 @@ def load_config():
                           help='Path to the Unix socket to bind on (default {})'.format(config['bind_socket']))
     parser.add_argument('-s', '--lxd-socket', dest='lxd_socket',
                           help='Path to the LXD Unix socket (default {})'.format(config['lxd']['socket']))
+    parser.add_argument('--tcp-proxy-bin', dest='tcp_proxy_bin',
+                          help='Path to the TCP proxy binary (default {})'.format(config['ports']['proxy_bin']))
     args = parser.parse_args()
 
     yaml = YAML()
@@ -87,6 +95,8 @@ def load_config():
         config.bind_socket = args.bind_socket
     if args.lxd_socket is not None:
         config.lxd.socket = args.lxd_socket
+    if args.tcp_proxy_bin is not None:
+        config.ports.proxy_bin = args.tcp_proxy_bin
 
     sock_dir = path.normpath(path.join(config.bind_socket, '..'))
     os.makedirs(sock_dir, exist_ok=True)

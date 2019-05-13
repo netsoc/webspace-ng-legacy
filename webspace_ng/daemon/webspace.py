@@ -2,6 +2,7 @@ from urllib import parse
 from functools import wraps
 import ipaddress
 import logging
+import random
 import pwd
 import grp
 import time
@@ -13,6 +14,7 @@ import dns.resolver
 
 from .. import ADMIN_GROUP, WebspaceError
 from .console import ConsoleSession
+from .tcp_proxy import TcpProxy
 
 def str2bool(s):
     ls = s.lower()
@@ -87,8 +89,9 @@ class Manager:
     allowed = {'images', 'init', 'status', 'log', 'console', 'console_close',
                'console_resize', 'shutdown', 'reboot', 'delete', 'boot_and_host',
                'boot_and_ip', 'get_config', 'set_option', 'unset_option',
-               'get_domains', 'add_domain', 'remove_domain'}
-    private_options = {'_domains'}
+               'get_domains', 'add_domain', 'remove_domain', 'get_ports',
+               'add_port', 'remove_port'}
+    private_options = {'_domains', '_ports'}
 
     def __init__(self, config, server):
         self.config = config
@@ -114,10 +117,18 @@ class Manager:
         self.ip_cache = {}
 
         self.custom_domains = {}
+        self.tcp_proxy = TcpProxy(config.ports.proxy_bin, config.bind_socket)
+        self.forwarded_ports = set()
         for container in filter(lambda c: c.name.endswith(self.config.lxd.suffix), self.client.containers.all()):
+            user = self.container_user(container)
             for domain in self.get_container_domains(container):
-                self.custom_domains[domain] = container.name[:-len(self.config.lxd.suffix)]
-        logging.debug('existing custom domain configuration: %s', self.custom_domains)
+                self.custom_domains[domain] = user
+            for iport, eport in self.get_container_ports(container).items():
+                logging.info('existing port forward %d -> %s:%d', eport, user, iport)
+                self.forwarded_ports.add(eport)
+                self.tcp_proxy.add_forwarding(eport, user, iport)
+
+        logging.info('existing custom domain configuration: %s', self.custom_domains)
 
     def _stop(self):
         for session in self.console_sessions.values():
@@ -149,7 +160,8 @@ class Manager:
                 'user.startup_delay': self.config.defaults.startup_delay,
                 'user.http_port': '80',
                 'user.https_port': '443',
-                'user._domains': ''
+                'user._domains': '',
+                'user._ports': ''
             }
         }
     def startup_delay(self, i):
@@ -164,10 +176,28 @@ class Manager:
         if key in self.reserved_options:
             return self.reserved_options[key](value)
         return value
+    def check_valid_port(self, port):
+        if type(port) != int or (port != 0 and port < self.config.ports.start or port > self.config.ports.end):
+            raise WebspaceError("{} is not a valid port: must be in the range {} - {} (or zero for random)".format(port, self.config.ports.start, self.config.ports.end))
     def get_container_domains(self, container):
         return list(filter(lambda d: len(d) > 0, container.config['user._domains'].split(',')))
     def set_container_domains(self, container, domains):
         container.config['user._domains'] = ','.join(domains)
+        container.save()
+    def next_random_port(self):
+        to_exclude = sorted(self.forwarded_ports)
+        if len(to_exclude) + self.config.ports.start == self.config.ports.end:
+            raise WebspaceError('all ports have been allocated')
+        port = random.randrange(self.config.ports.start, self.config.ports.end - len(to_exclude) + 1)
+        for p in to_exclude:
+            if port < p:
+                break
+            port += 1
+        return port
+    def get_container_ports(self, container):
+        return {iport: eport for iport, eport in map(lambda p: map(int, p.split(':')), filter(lambda p: len(p) > 0, container.config['user._ports'].split(',')))}
+    def set_container_ports(self, container, ports):
+        container.config['user._ports'] = ','.join(map(lambda p: f'{p[0]}:{p[1]}', ports.items()))
         container.save()
     def start_container(self, container):
         with self.container_lock:
@@ -352,11 +382,10 @@ class Manager:
     @check_init
     def get_domains(self, user, container):
         return [self.user_domain(user)] + self.get_container_domains(container)
-
     @check_init
     def add_domain(self, user, container, domain):
         if domain in self.custom_domains:
-            raise WebspaceError("'{}' has already been configured as a custom domain")
+            raise WebspaceError("'{}' has already been configured as a custom domain".format(domain))
 
         answer = dns.resolver.query(domain, 'TXT')
         verified = False
@@ -372,17 +401,56 @@ class Manager:
         with self.container_lock:
             self.custom_domains[domain] = user
             self.set_container_domains(container, self.get_container_domains(container) + [domain])
-
     @check_init
     def remove_domain(self, user, container, domain):
         if not domain in self.custom_domains:
-            raise WebspaceError("'{}' has not been configured as a custom domain")
+            raise WebspaceError("'{}' has not been configured as a custom domain".format(domain))
 
         with self.container_lock:
             del self.custom_domains[domain]
             domains = self.get_container_domains(container)
             domains.remove(domain)
             self.set_container_domains(container, domains)
+
+    @check_init
+    def get_ports(self, user, container):
+        return {str(eport): str(iport) for eport, iport in self.get_container_ports(container).items()}
+    @check_init
+    def add_port(self, user, container, iport, eport):
+        with self.container_lock:
+            existing = self.get_container_ports(container)
+            if port(iport) in existing:
+                raise WebspaceError('external port {} is already forwarded to port {}'.format(existing[iport], iport))
+            if len(existing) == self.config.ports.max:
+                raise WebspaceError('you cannot forward any more ports')
+
+            self.check_valid_port(eport)
+            if eport in self.forwarded_ports:
+                raise WebspaceError('external port {} has already been forwarded'.format(eport))
+            if eport == 0:
+                eport = self.next_random_port()
+
+            logging.debug('adding port forward: %d -> %s:%d', eport, user, iport)
+            self.forwarded_ports.add(eport)
+            self.tcp_proxy.add_forwarding(eport, user, iport)
+
+            existing[iport] = eport
+            self.set_container_ports(container, existing)
+        return eport
+    @check_init
+    def remove_port(self, user, container, iport):
+        with self.container_lock:
+            port(iport)
+            ports = self.get_container_ports(container)
+            if not iport in ports:
+                raise WebspaceError('no port has been forwarded to {}'.format(iport))
+
+            eport = ports[iport]
+            self.tcp_proxy.remove_forwarding(eport)
+            self.forwarded_ports.remove(eport)
+
+            del ports[iport]
+            self.set_container_ports(container, ports)
 
     def _dispatch(self, method, params):
         if not method in Manager.allowed:

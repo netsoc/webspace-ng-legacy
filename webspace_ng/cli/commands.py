@@ -239,3 +239,17 @@ def domains_add(client, args):
 @cmd
 def domains_remove(client, args):
     client.remove_domain(args.domain)
+
+@cmd
+def ports_show(client, args):
+    ports = client.get_ports()
+    print('Container ports:')
+    for iport, eport in ports.items():
+        print(' - {} -> {}'.format(eport, iport))
+@cmd
+def ports_add(client, args):
+    eport = client.add_port(args.iport, args.eport)
+    print('Port {} in your container is now accessible externally via port {}'.format(args.iport, eport))
+@cmd
+def ports_remove(client, args):
+    client.remove_port(args.iport)

@@ -1,6 +1,8 @@
 use std::num;
 use std::ptr;
 use std::collections::HashMap;
+use std::env;
+use std::process;
 use std::thread;
 use std::io::{self, Read, Write};
 use std::net::{AddrParseError, Ipv4Addr, SocketAddr, TcpStream, TcpListener};
@@ -78,6 +80,10 @@ quick_error! {
             display("{}", err)
         }
 
+        Usage(arg0: String) {
+            description("usage: tcp-proxy <webspaced socket path>")
+            display("usage: {} <webspaced socket path>", arg0)
+        }
         Quit
         InvalidCommand(reason: &'static str) {
             description("invalid command")
@@ -99,6 +105,8 @@ quick_error! {
     }
 }
 type Result<T> = std::result::Result<T, Error>;
+
+const BUFFER_SIZE: usize = 65536;
 
 struct UnixXmlrpc {
     uri: hyper::Uri,
@@ -156,9 +164,9 @@ impl ForwardingConn {
     pub fn new(src: TcpStream, dst: TcpStream) -> ForwardingConn {
         ForwardingConn {
             src,
-            src_buf: BytesMut::with_capacity(4096),
+            src_buf: BytesMut::with_capacity(BUFFER_SIZE),
             dst,
-            dst_buf: BytesMut::with_capacity(4096),
+            dst_buf: BytesMut::with_capacity(BUFFER_SIZE),
         }
     }
 
@@ -217,6 +225,7 @@ impl ForwardingConn {
 }
 
 struct ForwardingInner {
+    webspaced_sock: String,
     eport: u16,
     user: String,
     iport: u16,
@@ -226,9 +235,10 @@ struct ForwardingInner {
     stop_fd: RawFd,
 }
 impl ForwardingInner {
-    pub fn new(stop_fd: RawFd, eport: u16, user: String, iport: u16) -> Result<ForwardingInner> {
+    pub fn new(stop_fd: RawFd, webspaced_sock: &str, eport: u16, user: String, iport: u16) -> Result<ForwardingInner> {
         let listener = TcpListener::bind(("::", eport))?;
         Ok(ForwardingInner {
+            webspaced_sock: webspaced_sock.to_owned(),
             eport,
             user,
             iport,
@@ -242,7 +252,7 @@ impl ForwardingInner {
     fn get_ip(&self) -> Result<Ipv4Addr> {
         let res = xmlrpc::Request::new("boot_and_ip")
             .arg(self.user.as_ref())
-            .call(UnixXmlrpc::new(hyperlocal::Uri::new("/var/lib/webspace-ng/unix.socket", "/RPC2").into()))?;
+            .call(UnixXmlrpc::new(hyperlocal::Uri::new(&self.webspaced_sock, "/RPC2").into()))?;
         match res.as_str() {
             Some(ip) => Ok(ip.parse()?),
             None => Err(Error::Rpc("server did not return a string".to_string())),
@@ -269,7 +279,7 @@ impl ForwardingInner {
             poll(&mut fds[..], -1)?;
 
             if !fds[0].revents().expect("stop_fd revents").is_empty() {
-                println!("port {} forward shutting down", self.eport);
+                println!("removing port {} forward", self.eport);
                 break;
             }
 
@@ -281,7 +291,7 @@ impl ForwardingInner {
                         let addrs = conn.addrs().expect("connection addresses");
                         match e {
                             Error::ConnClosed => println!("conn closed {:?}", addrs),
-                            e => eprintln!("forwarding error: {}", e),
+                            e => println!("forwarding error: {}", e),
                         }
                         to_remove.push(addrs);
                     },
@@ -291,7 +301,7 @@ impl ForwardingInner {
             if !fds[1].revents().expect("listening socket revents").is_empty() {
                 match self.new_conn() {
                     Ok(_) => {},
-                    Err(e) => eprintln!("error opening forwarding connection from {} -> {}: {}", self.eport, self.iport, e),
+                    Err(e) => println!("error opening forwarding connection from {} -> {}: {}", self.eport, self.iport, e),
                 }
             }
             fds.clear();
@@ -312,9 +322,9 @@ struct Forwarding {
     handle: thread::JoinHandle<Result<()>>,
 }
 impl Forwarding {
-    pub fn new(eport: u16, user: &str, iport: u16) -> Result<Forwarding> {
+    pub fn new(webspaced_sock: &str, eport: u16, user: &str, iport: u16) -> Result<Forwarding> {
         let stop_fd = eventfd(0, EfdFlags::empty()).expect("eventfd()");
-        let mut inner = ForwardingInner::new(stop_fd, eport, user.to_owned(), iport)?;
+        let mut inner = ForwardingInner::new(stop_fd, webspaced_sock, eport, user.to_owned(), iport)?;
         let handle = thread::spawn(move || inner.run());
 
         Ok(Forwarding {
@@ -331,11 +341,13 @@ impl Forwarding {
 
 struct Proxy {
     ports: HashMap<u16, Forwarding>,
+    webspaced_sock: String,
 }
 impl Proxy {
-    pub fn new() -> Proxy {
+    pub fn new(webspaced_sock: &str) -> Proxy {
         Proxy {
             ports: HashMap::new(),
+            webspaced_sock: webspaced_sock.to_owned(),
         }
     }
 
@@ -357,7 +369,7 @@ impl Proxy {
                 }
                 let iport: u16 = args[3].parse()?;
 
-                self.ports.insert(eport, Forwarding::new(eport, args[2], iport)?);
+                self.ports.insert(eport, Forwarding::new(&self.webspaced_sock, eport, args[2], iport)?);
             },
             "remove" => {
                 if args.len() != 2 {
@@ -383,14 +395,19 @@ impl Proxy {
     }
 }
 
-fn main() -> Result<()> {
+fn run() -> Result<()> {
+    let mut args: Vec<_> = env::args().collect();
+    if args.len() != 2 {
+        return Err(Error::Usage(args.remove(0)));
+    }
+
     let mut sigmask = SigSet::empty();
     sigmask.add(Signal::SIGINT);
     sigmask.add(Signal::SIGTERM);
     sigmask.thread_set_mask()?;
     let quit_fd = SignalFd::new(&sigmask)?;
 
-    let mut proxy = Proxy::new();
+    let mut proxy = Proxy::new(&args[1]);
     let stdin = io::stdin();
     let mut fds = [PollFd::new(quit_fd.as_raw_fd(), EventFlags::POLLIN), PollFd::new(stdin.as_raw_fd(), EventFlags::POLLIN | EventFlags::POLLPRI)];
     loop {
@@ -399,7 +416,6 @@ fn main() -> Result<()> {
             Err(e) => return Err(e.into()),
         };
         if !fds[0].revents().expect("signalfd revents").is_empty() {
-            println!("quitting");
             break;
         }
 
@@ -407,12 +423,19 @@ fn main() -> Result<()> {
         stdin.read_line(&mut line)?;
         let args: Vec<_> = line.trim().split(" ").collect();
         match proxy.handle_command(&args[..]) {
-            Ok(_) => {},
             Err(Error::Quit) => break,
-            Err(e) => eprintln!("{}", e),
+            Ok(_) => eprintln!("ok"),
+            Err(e) => eprintln!("error: {}", e),
         }
     }
 
+    println!("shutting down");
     proxy.stop()?;
     Ok(())
+}
+fn main() {
+    if let Err(e) = run() {
+        eprintln!("{}", e);
+        process::exit(1);
+    }
 }
