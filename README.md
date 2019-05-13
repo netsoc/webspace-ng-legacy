@@ -2,7 +2,7 @@
 Next Generation webspaces powered by [LXD](https://linuxcontainers.org/).
 
 ## What does this do?
-Allows users to have their own VM-like container to host a website on a shared IP (courtesy of LXD and [OpenResty](http://openresty.org) and some Python + Lua).
+Allows users to have their own VM-like container to host a website on a shared IP (courtesy of LXD, [OpenResty](http://openresty.org) / Nginx, some Python, Lua and just a sprinkling of Rust).
 
 # For sysadmins
 See [INSTALL.md](INSTALL.md).
@@ -36,6 +36,8 @@ By default, SSL for HTTPS requests to your webspace will be handled transparentl
 
 However, you might want to roll your own SSL. If so, do `webspace-cli config set terminate_ssl false`. This will use some SNI magic to pass HTTPS requests directly through to your container. You'll need to get your own certificate (via Let's Encrypt or otherwise) and listen on a HTTPS port.
 
+_Note: If you want to redirect requests to HTTPS, be sure to check the value of the `X-Forwarded-Proto` header, passed to you by the main reverse proxy (`http` vs `https`). Otherwise, with SSL termination enabled, you will not be able to tell if a request was made over HTTP or HTTPS._
+
 ## HTTP(S) ports
 By default, incoming requests will be proxied to port 80 in your container (port 443 for HTTPS with SSL termination disabled).
 
@@ -51,3 +53,13 @@ You'll also need to add a `CNAME` or (`A `/` AAAA` record) pointing to your host
 Wildcard domains (e.g. `*.mywebsite.com`) should also work.
 
 **Note: If you want HTTPS to work correctly (no warning message in the browser), you'll need to disable SSL termination and obtain SSL certificates for your domain(s). SSL termination always uses your hoster's certificate which only works for the default domain.**
+
+## Port forwarding
+Although HTTP reverse proxy magic allows you to connect your webspace in your browser easily, you might want to host other TCP-based services (e.g. SSH).
+In order for these to be publically accessible, you must set up port forwarding (TCP ports only):
+
+ - `webspace-cli ports add <internal port>` will create a port forwarding rule (e.g. `webspace-cli ports add 22` for SSH)
+ - Any traffic coming to the main host's IP address on a randomly chosen port will be redirected to your container
+ - You can see the random port by running `webspace-cli ports`
+ - Passing `-p <external port>` will allow you to pick the external port, although some may already be taken
+ - If your container isn't running, it will be started when a connection is made (and the connection will hang while the container is booting)
