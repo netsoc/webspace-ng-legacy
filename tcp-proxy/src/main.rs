@@ -184,12 +184,9 @@ impl ForwardingConn {
         list.push(PollFd::new(self.dst.as_raw_fd(), dst_flags));
     }
     pub fn update(&mut self, src: PollFd, dst: PollFd) -> Result<()> {
-        let (saddr, daddr) = self.addrs()?;
         let src_flags = src.revents().expect("src flags");
         if src_flags.contains(EventFlags::POLLOUT) {
-            let written = self.src.write(&self.dst_buf)?;
-            println!("wrote {} bytes to source ({})", written, saddr);
-
+            self.src.write(&self.dst_buf)?;
             self.dst_buf.clear();
         } else if src_flags.contains(EventFlags::POLLIN) {
             unsafe {
@@ -198,15 +195,12 @@ impl ForwardingConn {
                     return Err(Error::ConnClosed);
                 }
                 self.src_buf.advance_mut(read);
-                //println!("read {} bytes from source ({})", read, saddr);
             }
         }
 
         let dst_flags = dst.revents().expect("dst flags");
         if dst_flags.contains(EventFlags::POLLOUT) {
-            let written = self.dst.write(&self.src_buf)?;
-            println!("wrote {} bytes to destination ({})", written, daddr);
-
+            self.dst.write(&self.src_buf)?;
             self.src_buf.clear();
         } else if dst_flags.contains(EventFlags::POLLIN) {
             unsafe {
@@ -215,9 +209,9 @@ impl ForwardingConn {
                     return Err(Error::ConnClosed);
                 }
                 self.dst_buf.advance_mut(read);
-                println!("read {} bytes from destination ({})", read, daddr);
             }
         }
+
         Ok(())
     }
 }
