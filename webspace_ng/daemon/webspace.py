@@ -3,9 +3,11 @@ from functools import wraps
 import ipaddress
 import logging
 import random
+import uuid
 import pwd
 import grp
 import time
+import signal
 import threading
 
 from pylxd import Client
@@ -75,6 +77,15 @@ def check_running(f):
             raise WebspaceError('Your container is not running')
         return f(self, user, container, *args)
     return wrapper
+def check_exec(f):
+    @wraps(f)
+    @check_running
+    def wrapper(self, user, container, session_id, *args):
+        if not user in self.exec_sessions:
+            raise WebspaceError("Your container doesn't have any active exec sessions")
+        session = self.exec_sessions[user][session_id]
+        return f(self, user, container, session_id, session, *args)
+    return wrapper
 def check_console(f):
     @wraps(f)
     @check_running
@@ -90,7 +101,8 @@ class Manager:
                'console_resize', 'shutdown', 'reboot', 'delete', 'boot_and_host',
                'boot_and_ip', 'get_config', 'set_option', 'unset_option',
                'get_domains', 'add_domain', 'remove_domain', 'get_ports',
-               'add_port', 'remove_port'}
+               'add_port', 'remove_port', 'exec', 'exec_close', 'exec_resize',
+               'exec_signal'}
     private_options = {'_domains', '_ports'}
 
     def __init__(self, config, server):
@@ -100,6 +112,7 @@ class Manager:
         self.client = Client(endpoint=endpoint)
         self.server = server
         self.admins = set(grp.getgrnam(ADMIN_GROUP).gr_mem)
+        self.exec_sessions = {}
         self.console_sessions = {}
         self.reserved_options = {
             'terminate_ssl': str2bool,
@@ -131,6 +144,9 @@ class Manager:
         logging.info('existing custom domain configuration: %s', self.custom_domains)
 
     def _stop(self):
+        for execs in self.exec_sessions.values():
+            for session in execs.values():
+                session.stop(join=True)
         for session in self.console_sessions.values():
             session.stop(join=True)
 
@@ -242,6 +258,52 @@ class Manager:
         return response.text
 
     @check_init
+    def exec(self, user, container, command, t_width, t_height):
+        if container.status_code != 103:
+            self.start_container(container)
+
+        response = container.api['exec'].post(json={
+            'command': command,
+            'wait-for-websocket': True,
+            'interactive': True,
+            'width': t_width,
+            'height': t_height
+        }).json()
+
+        # Get the control websocket path
+        operation_id = Operation.extract_operation_id(response['operation'])
+        ws_uri = self.client.api.operations[operation_id] \
+                 .websocket._api_endpoint
+        ws_path = parse.urlparse(ws_uri).path
+
+        # Get the secrets for the console fd and control fd
+        fds = response['metadata']['metadata']['fds']
+
+        console_path = '{}?secret={}'.format(ws_path, fds['0'])
+        control_path = '{}?secret={}'.format(ws_path, fds['control'])
+
+        session_id = str(uuid.uuid4())
+        session = ConsoleSession(user, self.client.websocket_url, console_path, control_path, socket_suffix='exec-{}'.format(session_id))
+        session.start()
+
+        if user not in self.exec_sessions:
+            self.exec_sessions[user] = {}
+        self.exec_sessions[user][session_id] = session
+
+        return session_id, session.socket_path
+    @check_exec
+    def exec_resize(self, _user, _container, _sid, session, t_width, t_height):
+        session.control.resize(t_width, t_height)
+    @check_exec
+    def exec_signal(self, _user, _container, _sid, session, signum):
+        session.control.signal(signum)
+    @check_exec
+    def exec_close(self, user, _, sid, session):
+        session.control.signal(signal.SIGTERM)
+        session.stop(join=True)
+        del self.console_sessions[user][sid]
+
+    @check_init
     def console(self, user, container, t_width, t_height):
         if container.status_code != 103:
             self.start_container(container)
@@ -271,11 +333,9 @@ class Manager:
         self.console_sessions[user] = session
 
         return session.socket_path
-
     @check_console
     def console_resize(self, _user, _container, session, t_width, t_height):
         session.control.resize(t_width, t_height)
-
     @check_console
     def console_close(self, user, _, session):
         session.stop(join=True)

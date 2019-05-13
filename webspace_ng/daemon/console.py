@@ -25,15 +25,22 @@ class ConsoleControl(WebSocketBaseClient):
                 'height': height
             }
         }).encode('utf-8')
-
         self.send(payload, binary=False)
+    def signal(self, signal):
+        payload = json.dumps({
+            'command': 'signal',
+            'signal': signal
+        }).encode('utf-8')
+        self.send(payload, binary=False)
+
     def received_message(self, message):
         print('control msg', message.data)
+
 class ConsoleSession(WebSocketBaseClient):
-    def __init__(self, user, ws_uri, console_path, control_path, *args, **kwargs):
+    def __init__(self, user, ws_uri, console_path, control_path, *args, socket_suffix='console', **kwargs):
         self.__shutdown_event = EventFD()
 
-        self.socket_path = path.join('/tmp', '{}-ws-console.socket'.format(user))
+        self.socket_path = path.join('/tmp', '{}-ws-{}.socket'.format(user, socket_suffix))
         try:
             os.unlink(self.socket_path)
         except OSError:

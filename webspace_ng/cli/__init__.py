@@ -33,6 +33,11 @@ def main():
     p_shutdown = subparsers.add_parser('log', help="Retrieve your container's system log")
     p_shutdown.set_defaults(func=log)
 
+    p_exec = subparsers.add_parser('exec', help='Run a command in your container')
+    p_exec.add_argument('command', help='Command to run')
+    p_exec.add_argument('args', nargs=argparse.REMAINDER, help='Command arguments')
+    p_exec.set_defaults(func=exec)
+
     p_console = subparsers.add_parser('console', help="Attach to your container's console")
     p_console.set_defaults(func=console)
 

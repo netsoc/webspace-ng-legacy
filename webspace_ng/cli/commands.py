@@ -138,14 +138,20 @@ def status(client, _args):
 def log(client, _args):
     print(client.log())
 
-@cmd
-def console(client, _args):
-    print('Attaching to console...')
+def _console(client, command=None):
     t_width, t_height = shutil.get_terminal_size()
-    sock_path = client.console(t_width, t_height)
+    if not command:
+        print('Attaching to console...')
+        sock_path = client.console(t_width, t_height)
+    else:
+        sid, sock_path = client.exec(command, t_width, t_height)
+
     def notify_resize(_signum, _frame):
         t_width, t_height = shutil.get_terminal_size()
-        client.console_resize(t_width, t_height)
+        if not command:
+            client.console_resize(t_width, t_height)
+        else:
+            client.exec_resize(sid, t_width, t_height)
     # SIGWINCH is sent when the terminal is resized
     signal.signal(signal.SIGWINCH, notify_resize)
 
@@ -162,7 +168,8 @@ def console(client, _args):
         should_quit.set()
     signal.signal(signal.SIGINT, trigger_quit)
     signal.signal(signal.SIGTERM, trigger_quit)
-    print('Attached, hit ^] (Ctrl+]) and then q to disconnect', end='\r\n')
+    if not command:
+        print('Attached, hit ^] (Ctrl+]) and then q to disconnect', end='\r\n')
 
     try:
         escape_read = False
@@ -172,16 +179,19 @@ def console(client, _args):
                 break
             if sys.stdin in r:
                 data = os.read(stdin, 1)
-                if escape_read:
-                    if data == CONSOLE_ESCAPE_QUIT:
-                        # The user wants to quit
-                        break
+                if not command:
+                    if escape_read:
+                        if data == CONSOLE_ESCAPE_QUIT:
+                            # The user wants to quit
+                            break
 
-                    # They don't want to quit, lets send the escape key along with their data
-                    sock.sendall(CONSOLE_ESCAPE + data)
-                    escape_read = False
-                elif data == CONSOLE_ESCAPE:
-                    escape_read = True
+                        # They don't want to quit, lets send the escape key along with their data
+                        sock.sendall(CONSOLE_ESCAPE + data)
+                        escape_read = False
+                    elif data == CONSOLE_ESCAPE:
+                        escape_read = True
+                    else:
+                        sock.sendall(data)
                 else:
                     sock.sendall(data)
             if sock in r:
@@ -195,6 +205,13 @@ def console(client, _args):
         # Restore the terminal to its original state
         termios.tcsetattr(stdin, termios.TCSANOW, old)
         sock.close()
+
+@cmd
+def exec(client, args):
+    _console(client, command=[args.command] + args.args)
+@cmd
+def console(client, _args):
+    _console(client)
 
 @cmd
 def shutdown(client, _args):
