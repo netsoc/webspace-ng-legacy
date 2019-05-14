@@ -2,7 +2,7 @@
 Next Generation webspaces powered by [LXD](https://linuxcontainers.org/).
 
 ## What does this do?
-Allows users to have their own VM-like container to host a website on a shared IP (courtesy of LXD, [OpenResty](http://openresty.org) / Nginx, some Python, Lua and just a sprinkling of Rust).
+Allows users to have their own VM-like container to host a website (and other services) on a shared IP (courtesy of LXD, [OpenResty](http://openresty.org) / Nginx, some Python, Lua and just a sprinkling of Rust).
 
 # For sysadmins
 See [INSTALL.md](INSTALL.md).
