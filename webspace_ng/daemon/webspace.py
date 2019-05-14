@@ -196,7 +196,7 @@ class Manager:
         if type(port) != int or (port != 0 and port < self.config.ports.start or port > self.config.ports.end):
             raise WebspaceError("{} is not a valid port: must be in the range {} - {} (or zero for random)".format(port, self.config.ports.start, self.config.ports.end))
     def get_container_domains(self, container):
-        return list(filter(lambda d: len(d) > 0, container.config['user._domains'].split(',')))
+        return list(filter(lambda d: len(d) > 0, container.config.get('user._domains', '').split(',')))
     def set_container_domains(self, container, domains):
         container.config['user._domains'] = ','.join(domains)
         container.save()
@@ -211,7 +211,7 @@ class Manager:
             port += 1
         return port
     def get_container_ports(self, container):
-        return {iport: eport for iport, eport in map(lambda p: map(int, p.split(':')), filter(lambda p: len(p) > 0, container.config['user._ports'].split(',')))}
+        return {iport: eport for iport, eport in map(lambda p: map(int, p.split(':')), filter(lambda p: len(p) > 0, container.config.get('user._ports', '').split(',')))}
     def set_container_ports(self, container, ports):
         container.config['user._ports'] = ','.join(map(lambda p: f'{p[0]}:{p[1]}', ports.items()))
         container.save()
