@@ -260,9 +260,11 @@ impl ForwardingInner {
     }
     fn new_conn(&mut self) -> Result<()> {
         let (src, src_addr) = self.listener.accept()?;
+        src.set_nodelay(true)?;
 
         let dst_addr: SocketAddr = (self.get_ip()?, self.iport).into();
         let dst = TcpStream::connect(dst_addr)?;
+        dst.set_nodelay(true)?;
 
         println!("conn from {} -> {}", src_addr, dst_addr);
         self.conns.insert((src.local_addr().expect("src local addr"), dst.local_addr().expect("dst local addr")), ForwardingConn::new(src, dst));
