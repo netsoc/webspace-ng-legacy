@@ -14,7 +14,7 @@ setuptools.setup(
     entry_points={
         'console_scripts': [
             'webspaced=webspace_ng.daemon:main',
-            'webspace-cli=webspace_ng.cli:main',
+            'webspace=webspace_ng.cli:main',
         ]
     }
 )
