@@ -172,6 +172,8 @@ class Manager:
                 'fingerprint': image
             },
             'config': {
+                'user.name': user,
+                'user.domain_suffix': self.config.domain_suffix,
                 'user.terminate_ssl': self.config.defaults.terminate_ssl,
                 'user.startup_delay': self.config.defaults.startup_delay,
                 'user.http_port': '80',

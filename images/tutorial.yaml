@@ -1,0 +1,283 @@
+image:
+  distribution: "ubuntu"
+  release: bionic
+  description: Netsoc Webspace starter image
+
+source:
+  downloader: debootstrap
+  same_as: gutsy
+  url: http://archive.ubuntu.com/ubuntu
+  keyserver: keyserver.ubuntu.com
+  keys:
+    - 0x790BC7277767219C42C86F933B4FE6ACC0B21F32
+
+  apt_sources: |-
+    {% if image.architecture_mapped == "amd64" or image.architecture_mapped == "i386" %}deb http://archive.ubuntu.com/ubuntu {{ image.release }} main restricted universe multiverse
+    deb http://archive.ubuntu.com/ubuntu {{ image.release }}-updates main restricted universe multiverse
+    deb http://security.ubuntu.com/ubuntu {{ image.release }}-security main restricted universe multiverse
+    {% else %}deb http://ports.ubuntu.com/ubuntu-ports {{ image.release }} main restricted universe multiverse
+    deb http://ports.ubuntu.com/ubuntu-ports {{ image.release }}-updates main restricted universe multiverse
+    deb http://ports.ubuntu.com/ubuntu-ports {{ image.release }}-security main restricted universe multiverse
+    {% endif %}
+
+targets:
+  lxc:
+    create-message: |-
+      You just created an {{ image.description }} container.
+
+    config:
+      - type: all
+        before: 5
+        content: |-
+          lxc.include = LXC_TEMPLATE_CONFIG/ubuntu.common.conf
+
+      - type: user
+        before: 5
+        content: |-
+          lxc.include = LXC_TEMPLATE_CONFIG/ubuntu.userns.conf
+
+      - type: all
+        after: 4
+        content: |-
+          lxc.include = LXC_TEMPLATE_CONFIG/common.conf
+
+          # For Ubuntu 14.04
+          lxc.mount.entry = /sys/kernel/debug sys/kernel/debug none bind,optional 0 0
+          lxc.mount.entry = /sys/kernel/security sys/kernel/security none bind,optional 0 0
+          lxc.mount.entry = /sys/fs/pstore sys/fs/pstore none bind,optional 0 0
+          lxc.mount.entry = mqueue dev/mqueue mqueue rw,relatime,create=dir,optional 0 0
+
+      - type: user
+        after: 4
+        content: |-
+          lxc.include = LXC_TEMPLATE_CONFIG/userns.conf
+
+          # For Ubuntu 14.04
+          lxc.mount.entry = /sys/firmware/efi/efivars sys/firmware/efi/efivars none bind,optional 0 0
+          lxc.mount.entry = /proc/sys/fs/binfmt_misc proc/sys/fs/binfmt_misc none bind,optional 0 0
+
+      - type: all
+        content: |-
+          lxc.arch = {{ image.architecture_personality }}
+
+files:
+  - path: /etc/hostname
+    generator: hostname
+
+  - path: /etc/hosts
+    generator: hosts
+
+  - path: /etc/resolvconf/resolv.conf.d/original
+    generator: remove
+
+  - path: /etc/resolvconf/resolv.conf.d/tail
+    generator: remove
+
+  - path: /etc/machine-id
+    generator: remove
+
+  - path: /etc/netplan/10-lxc.yaml
+    generator: dump
+    content: |-
+      network:
+        version: 2
+        ethernets:
+          eth0: {dhcp4: true}
+    releases:
+      - artful
+      - bionic
+      - cosmic
+      - disco
+
+  - path: /etc/network/interfaces
+    generator: dump
+    content: |-
+      # This file describes the network interfaces available on your system
+      # and how to activate them. For more information, see interfaces(5).
+
+      # The loopback network interface
+      auto lo
+      iface lo inet loopback
+
+      auto eth0
+      iface eth0 inet dhcp
+    releases:
+      - trusty
+      - xenial
+
+  - path: /etc/init/lxc-tty.conf
+    generator: upstart-tty
+    releases:
+      - trusty
+
+  - path: /etc/webspace_info
+    generator: template
+    name: webspace_info
+    when:
+      - create
+    content: |-
+      Welcome to your webspace, {{ config_get("user.name", "ubuntu") }}!
+
+      - Any pages / files in the `html/` directory are accessible at
+        https://{{ config_get("user.name", "ubuntu") }}{{ config_get("user.domain_suffix", ".example.com") }}
+      - This container is based on Ubuntu 18.04 Server ("Bionic Beaver")
+      - You should be able to SSH into this container using your forwarded SSH port
+      - See https://github.com/netsoc/webspace-ng for more information
+        about webspaces
+
+  - path: /root/.webspace_username
+    generator: template
+    name: webspace_username
+    when:
+      - create
+    content: |-
+      {{ config_get("user.name", "ubuntu") }}
+
+  - path: /var/www/html/index.nginx-debian.html
+    generator: remove
+  - path: /var/www/html/index.html
+    generator: template
+    name: index.html
+    when:
+      - create
+    content: |-
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>{{ config_get("user.name", "ubuntu") }}'s webspace</title>
+          <style>
+            body {
+              width: 35em;
+              margin: 0 auto;
+              font-family: Tahoma, Verdana, Arial, sans-serif;
+            }
+          </style>
+        </head>
+        <body>
+          <h1>Welcome to your webspace, {{ config_get("user.name", "ubuntu") }}!</h1>
+          <p>If you see this page, your webspace has been set up correctly. You can now
+          put HTML / CSS / JS in the <code>html/</code> directory in your container to make
+          this space your own!</p>
+
+          <p>For more information about webspaces, see the
+          <a href="https://github.com/netsoc/webspace-ng">README on GitHub</a>.
+
+          <p><em>Thank you for choosing Netsoc.</em></p>
+        </body>
+      </html>
+
+  - path: /etc/nginx/sites-available/default
+    generator: template
+    name: nginx_default
+    when:
+      - create
+    content: |-
+      server {
+        listen 80 default_server;
+        listen [::]:80 default_server;
+
+        root /var/www/html;
+
+        # Add index.php to the list if you are using PHP
+        index index.html index.htm;
+
+        server_name {{ config_get("user.name", "ubuntu") }}{{ config_get("user.domain_suffix", ".example.com") }};
+
+        location / {
+          # Redirect to https, only if the proxied protocol was http
+          # (avoids infinite loop since we're using SSL termination)
+          if ($http_x_forwarded_proto = "http") {
+            return 301 https://$server_name$request_uri;
+          }
+
+          # First attempt to serve request as file, then
+          # as directory, then fall back to displaying a 404.
+          try_files $uri $uri/ =404;
+        }
+
+        # pass PHP scripts to FastCGI server
+        #
+        #location ~ \.php$ {
+        #       include snippets/fastcgi-php.conf;
+        #
+        #       # With php-fpm (or other unix sockets):
+        #       fastcgi_pass unix:/var/run/php/php7.0-fpm.sock;
+        #       # With php-cgi (or other tcp sockets):
+        #       fastcgi_pass 127.0.0.1:9000;
+        #}
+      }
+
+  - path: /usr/local/bin/first_run
+    generator: dump
+    content: |-
+      #!/bin/sh
+      set -e
+
+      [ -f "/root/.webspace_username" ] || { echo "Container has already been set up"; exit 1; }
+
+      user="$(cat /root/.webspace_username)"
+      echo "Creating user $user..."
+      useradd --create-home -s /bin/bash -G sudo,www-data -U "$user"
+
+      echo "Enter a new password for $user (this can be different from your user account)"
+      passwd "$user"
+
+      ln -s /var/www/html "/home/$user/html"
+      chown "$user:www-data" /var/www/html/index.html
+      echo "cat /etc/webspace_info" >> "/home/$user/.profile"
+
+      rm /root/.webspace_username
+
+packages:
+  manager: apt
+  update: true
+  cleanup: true
+
+  sets:
+    - packages:
+      - apt-transport-https
+      - language-pack-en
+      - vim
+      - openssh-client
+      - openssh-server
+      - nginx
+      action: install
+
+actions:
+  - trigger: post-update
+    action: |-
+      #!/bin/sh
+      set -eux
+
+      getent group sudo >/dev/null 2>&1 || groupadd --system sudo
+
+  - trigger: post-packages
+    action: |-
+      #!/bin/sh
+      set -eux
+
+      # Make sure the locale is built and functional
+      locale-gen en_IE.UTF-8 en_US.UTF-8
+      update-locale LANG=en_IE.UTF-8
+
+      systemctl enable nginx.service
+      chgrp -R www-data /var/www
+      chmod -R g+w /var/www
+
+      # Cleanup underlying /run
+      mount -o bind / /mnt
+      rm -rf /mnt/run/*
+      umount /mnt
+
+      # Cleanup temporary shadow paths
+      rm /etc/*-
+
+  - trigger: post-files
+    action: |-
+      #!/bin/sh
+      set -eux
+
+      chmod +x /usr/local/bin/first_run
+
+mappings:
+  architecture_map: debian

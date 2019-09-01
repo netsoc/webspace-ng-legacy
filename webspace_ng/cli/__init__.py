@@ -97,5 +97,8 @@ def main():
     pf_remove.add_argument('iport', help='Internal port', type=int)
     pf_remove.set_defaults(func=ports_remove)
 
+    p_tutorial = subparsers.add_parser('tutorial', help='Simple tutorial setup')
+    p_tutorial.set_defaults(func=tutorial)
+
     args = parser.parse_args()
     args.func(args)

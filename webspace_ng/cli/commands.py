@@ -270,3 +270,19 @@ def ports_add(client, args):
 @cmd
 def ports_remove(client, args):
     client.remove_port(args.iport)
+
+@cmd
+def tutorial(client, args):
+    with process('Creating your container...', done=' success!'):
+        image = find_image(client, 'tutorial')
+        if image is None:
+            raise WebspaceError('"{}" is not a valid image alias / fingerprint'.format(args.image))
+
+        client.init(image['fingerprint'])
+
+    print('Performing initial setup...')
+    _console(client, ['/usr/local/bin/first_run'])
+
+    eport = client.add_port(22, 0)
+    print('Congratulations, your webspace is ready!')
+    print('Your container is accessible externally via SSH on this server on port {}'.format(eport))
