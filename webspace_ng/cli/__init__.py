@@ -41,6 +41,10 @@ def main():
     p_console = subparsers.add_parser('console', help="Attach to your container's console")
     p_console.set_defaults(func=console)
 
+    p_exec = subparsers.add_parser('login', help='Shortcut to open a shell in your container \
+        (logging in with a configured user)')
+    p_exec.set_defaults(func=login)
+
     p_shutdown = subparsers.add_parser('shutdown', help='Shutdown your container')
     p_shutdown.set_defaults(func=shutdown)
 

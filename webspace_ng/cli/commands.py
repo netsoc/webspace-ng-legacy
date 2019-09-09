@@ -7,6 +7,7 @@ import tty
 import socket
 import select
 import shutil
+import getpass
 
 from humanfriendly import format_size
 from eventfd import EventFD
@@ -83,6 +84,8 @@ def cmd(f):
     def wrapper(args):
         user = args.user if 'user' in args else None
         with Client(args.socket_path, user=user) as client:
+            if not user:
+                user = getpass.getuser()
             try:
                 return f(client, args)
             except Exception as ex:
@@ -281,8 +284,21 @@ def tutorial(client, args):
         client.init(image['fingerprint'])
 
     print('Performing initial setup...')
+    client.set_option('user', client.user)
     _console(client, ['/usr/local/bin/first_run'])
 
     eport = client.add_port(22, 0)
     print('Congratulations, your webspace is ready!')
     print('Your container is accessible externally via SSH on this server on port {}'.format(eport))
+
+@cmd
+def login(client, _args):
+    config = client.get_config()
+    if 'user' in config:
+        user = config['user']
+    else:
+        user = 'root'
+        print('Warning: `user` config option is not set - defaulting to `root`')
+        print('(Use `{} config set user <username>` to set this option)'.format(sys.argv[0]))
+
+    _console(client, ['su', '-', user])
