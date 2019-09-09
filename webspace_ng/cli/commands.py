@@ -284,7 +284,6 @@ def tutorial(client, args):
         client.init(image['fingerprint'])
 
     print('Performing initial setup...')
-    client.set_option('user', client.user)
     _console(client, ['/usr/local/bin/first_run'])
 
     eport = client.add_port(22, 0)
@@ -294,8 +293,8 @@ def tutorial(client, args):
 @cmd
 def login(client, _args):
     config = client.get_config()
-    if 'user' in config:
-        user = config['user']
+    if 'name' in config:
+        user = config['name']
     else:
         user = 'root'
         print('Warning: `user` config option is not set - defaulting to `root`')
