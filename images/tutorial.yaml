@@ -119,7 +119,7 @@ files:
       Welcome to your webspace, {{ config_get("user.name", "ubuntu") }}!
 
       - Any pages / files in the `html/` directory are accessible at
-        https://{{ config_get("user.name", "ubuntu") }}{{ config_get("user.domain_suffix", ".example.com") }}
+        https://{{ config_get("user.name", "ubuntu") }}{{ config_get("user._domain_suffix", ".example.com") }}
       - This container is based on Ubuntu 18.04 Server ("Bionic Beaver")
       - You should be able to SSH into this container using your forwarded SSH port
       - See https://github.com/netsoc/webspace-ng for more information
@@ -181,7 +181,7 @@ files:
         # Add index.php to the list if you are using PHP
         index index.html index.htm;
 
-        server_name {{ config_get("user.name", "ubuntu") }}{{ config_get("user.domain_suffix", ".example.com") }};
+        server_name {{ config_get("user.name", "ubuntu") }}{{ config_get("user._domain_suffix", ".example.com") }};
 
         location / {
           # Redirect to https, only if the proxied protocol was http

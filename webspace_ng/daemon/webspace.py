@@ -103,7 +103,7 @@ class Manager:
                'get_domains', 'add_domain', 'remove_domain', 'get_ports',
                'add_port', 'remove_port', 'exec', 'exec_close', 'exec_resize',
                'exec_signal'}
-    private_options = {'_domains', '_ports'}
+    private_options = {'_domains', '_ports', '_domain_suffix'}
 
     def __init__(self, config, server):
         self.config = config
@@ -173,13 +173,13 @@ class Manager:
             },
             'config': {
                 'user.name': user,
-                'user.domain_suffix': self.config.domain_suffix,
                 'user.terminate_ssl': self.config.defaults.terminate_ssl,
                 'user.startup_delay': self.config.defaults.startup_delay,
                 'user.http_port': '80',
                 'user.https_port': '443',
                 'user._domains': '',
-                'user._ports': ''
+                'user._ports': '',
+                'user._domain_suffix': self.config.domain_suffix,
             }
         }
     def startup_delay(self, i):
