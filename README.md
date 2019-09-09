@@ -14,6 +14,9 @@ See [INSTALL.md](INSTALL.md).
 2. Run `webspace images` to view a list of available Linux distributions to base your container off of
 3. Do `webspace init <your chosen image name / fingerprint>` to set up your container
 4. `webspace exec bash` will give you a shell
+    - `webspace login` is a shortcut to run a shell in your container with a configured username
+        - If you get `su: user <username> does not exist`, you need to either create a user called
+        `<username>` in the container, or change the `name` config option (`webspace config set name <username>`)
     - `webspace console` will attach you to the TTY of your container.
         - Hit enter a few times and you should see a login prompt.
 		- The default login details will depend on your chosen image.
