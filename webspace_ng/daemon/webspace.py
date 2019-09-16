@@ -359,6 +359,10 @@ class Manager:
     def delete(self, _user, container):
         if container.status_code == 103:
             self.stop_container(container)
+
+        for eport in self.get_container_ports(container).values():
+            self.tcp_proxy.remove_forwarding(eport)
+            self.forwarded_ports.remove(eport)
         container.delete(wait=True)
 
     @check_init
