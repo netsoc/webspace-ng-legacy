@@ -378,7 +378,7 @@ class Manager:
 
     @check_init
     def unset_option(self, _user, container, key):
-        if key in Manager.private_options or self.reserved_options:
+        if key in Manager.private_options or key in self.reserved_options:
             raise WebspaceError('{} is a reserved/private option and may not be unset'.format(key))
 
         del container.config['user.{}'.format(key)]
