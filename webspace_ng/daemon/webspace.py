@@ -260,12 +260,13 @@ class Manager:
         return response.text
 
     @check_init
-    def exec(self, user, container, command, t_width, t_height):
+    def exec(self, user, container, command, t_width, t_height, environment):
         if container.status_code != 103:
             self.start_container(container)
 
         response = container.api['exec'].post(json={
             'command': command,
+            'environment': environment,
             'wait-for-websocket': True,
             'interactive': True,
             'width': t_width,

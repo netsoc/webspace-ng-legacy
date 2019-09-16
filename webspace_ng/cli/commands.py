@@ -141,13 +141,13 @@ def status(client, _args):
 def log(client, _args):
     print(client.log())
 
-def _console(client, command=None):
+def _console(client, command=None, environment={}):
     t_width, t_height = shutil.get_terminal_size()
     if not command:
         print('Attaching to console...')
         sock_path = client.console(t_width, t_height)
     else:
-        sid, sock_path = client.exec(command, t_width, t_height)
+        sid, sock_path = client.exec(command, t_width, t_height, environment)
 
     def notify_resize(_signum, _frame):
         t_width, t_height = shutil.get_terminal_size()
@@ -297,7 +297,9 @@ def login(client, _args):
         user = config['name']
     else:
         user = 'root'
-        print('Warning: `user` config option is not set - defaulting to `root`')
+        print('Warning: `name` config option is not set - defaulting to `root`')
         print('(Use `{} config set user <username>` to set this option)'.format(sys.argv[0]))
 
-    _console(client, ['su', '-', user])
+    # `script` is a workaround for LXD's lack of pts allocation with `exec`
+    env = {'TERM': os.environ.get('TERM', 'vt100')}
+    _console(client, ['script', '-q', '-c', 'su - {}'.format(user), '/dev/null'], environment=env)
